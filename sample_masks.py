@@ -75,13 +75,13 @@ if __name__ == '__main__':
 
     video_metadata = load_json(opt.video_metadata)
     
-    video_names = ["_1jFnujWn50-0", "zl6ckY2YM8c-2", "zOt2vMuYLx4-0"]
+    # video_names = ["_1jFnujWn50-0", "zl6ckY2YM8c-2", "zOt2vMuYLx4-0"]
     video_lookup = {v["file_name"]: v for v in video_metadata}
 
     for vid in os.listdir(feature_folder):
         # For every video, we will select the closest elements to the clusters' center
-        if vid.split('_output')[0] not in video_names:
-            continue
+        # if vid.split('_output')[0] not in video_names:
+        #     continue
         print(vid.split('_output')[0])
         vid_path = os.path.join(feature_folder, vid)
         features = load_pickle(vid_path)

@@ -74,6 +74,8 @@ Structure of files system so far:
 ## <a name="sample-masks"></a>Sample masks for labelling
 In order to select the most representative frames for labeling, a clustering algorithm was used. The algorithm employed is KMeans, with a default of 5 clusters, which can be adjusted through the arguments. The features for each frame were used for the clustering process. The selected frames are the top 3  closest to the center of each cluster, resulting in 15 frames in total. After selecting the frames, they are cropped to a region close to the bounding box of the segmentation mask. Once the process is complete, all the data are stored in the bbox folder.
 
+The number of total representative frames is: 11681
+
 ```
 python sample_masks.py --data_folder data --output_folder bbox --num_clusters 5 --num_elements 3
 ```
