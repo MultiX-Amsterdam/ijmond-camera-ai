@@ -1,0 +1,11 @@
+*.pyc
+*~
+.idea/
+.vscode/
+.DS_Store
+*.swp
+*.log*
+*screenlog*
+data
+metadata_ijmond_jan_22_2024.json
+trans_bvm/models/ucnet_trans3

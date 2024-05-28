@@ -1,5 +1,4 @@
-# Human in-the-loop pipeline to detect industrial smoke
-
+# ijmond-camera-ai
 
 ### Table of Content
 - [Download the videos](#download-videos)
