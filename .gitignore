@@ -10,3 +10,7 @@ data
 metadata_ijmond_jan_22_2024.json
 trans_bvm/models/ucnet_trans3
 bbox
+sample_names.txt
+sample_names_total.txt
+collect_sample_names.py
+bbox_reduced

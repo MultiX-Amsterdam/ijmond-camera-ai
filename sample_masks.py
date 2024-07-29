@@ -12,11 +12,11 @@ def args_parser():
     parser.add_argument('--data_folder', type=str, default="data")
     parser.add_argument('--mask_folder', type=str, default="masks")
     parser.add_argument('--input_folder', type=str, default="frames")
-    parser.add_argument('--output_folder', type=str, default="bbox")
+    parser.add_argument('--output_folder', type=str, default="bbox_reduced")
     parser.add_argument('--store_bbox', type=bool, default=True)
     parser.add_argument('--feature_folder', type=str, default='data/features')
-    parser.add_argument('--num_clusters', type=int, default=5)
-    parser.add_argument('--num_elements', type=int, default=3, help="Number of elements to select from each cluster")
+    parser.add_argument('--num_clusters', type=int, default=3)
+    parser.add_argument('--num_elements', type=int, default=1, help="Number of elements to select from each cluster")
     parser.add_argument('--video_metadata', type=str, default='metadata_ijmond_jan_22_2024.json')
     opt = parser.parse_args()
     return opt
@@ -56,6 +56,8 @@ def labels_selection(selected_frames, mask_folder_fullpath, input_folder_fullpat
                 json.dump(bbox[i], f)
 
         num_sum_images += len(sub_images)
+    if num_sum_images == 0:
+        print(f"No sub-images were created for the video {vid}.")
     return num_sum_images
 
 
@@ -101,13 +103,16 @@ if __name__ == '__main__':
             idxes = np.argsort(distances)
             getter = itemgetter(*idxes[:num_elements])
             selected_elements = getter(list(features.keys()))
+            if num_elements == 1:
+                selected_elements = [selected_elements]
             total_selected_elements.extend(selected_elements)
 
         num_sum_images = labels_selection(total_selected_elements, mask_folder_fullpath, input_folder_fullpath, output_folder, store_bbox, vid.split('_output')[0])
         
         # Store the metadata of the video in a json file
-        with open(os.path.join(output_folder, vid.split('_output')[0], "video.json"), "w") as f:
-            json.dump(video_lookup[vid.split('_output')[0]], f)
+        if num_sum_images != 0:
+            with open(os.path.join(output_folder, vid.split('_output')[0], "video.json"), "w") as f:
+                json.dump(video_lookup[vid.split('_output')[0]], f)
         
         total_samples += num_sum_images
     
