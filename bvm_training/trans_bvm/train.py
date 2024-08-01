@@ -39,7 +39,7 @@ parser.add_argument('--reg_weight', type=float, default=1e-4, help='weight for r
 parser.add_argument('--lat_weight', type=float, default=10.0, help='weight for latent loss')
 parser.add_argument('--vae_loss_weight', type=float, default=0.4, help='weight for vae loss')
 parser.add_argument('--dataset_path', type=str, default="data/ijmond_data/train", help='dataset path')
-parser.add_argument('--pretrained_weights', type=str, default=None, help='pretrained weights (e.g models/ucnet_trans3_baseline/Model_50_gen.pth). it can be none')
+parser.add_argument('--pretrained_weights', type=str, default="models/ucnet_trans3_baseline/Model_50_gen.pth", help='pretrained weights. it can be none')
 parser.add_argument('--save_model_path', type=str, default="models/finetune", help='dataset path')
 opt = parser.parse_args()
 print('Generator Learning Rate: {}'.format(opt.lr_gen))

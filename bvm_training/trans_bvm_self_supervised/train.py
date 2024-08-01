@@ -44,11 +44,11 @@ def argparser():
     parser.add_argument('--contrastive_loss_weight', type=float, default=0.1, help='weight for contrastive loss')
     parser.add_argument('--labeled_dataset_path', type=str, default="data/SMOKE5K/SMOKE5K/train", help='dataset path')
     parser.add_argument('--unlabeled_dataset_path', type=str, default="data/ijmond_data/train", help='dataset path')
-    parser.add_argument('--pretrained_weights', type=str, default=None, help='pretrained weights. it can be none') # models/ucnet_trans3_baseline/Model_50_gen.pth
-    parser.add_argument('--save_model_path', type=str, default="models/ss__no_samples_1000", help='dataset path')
+    parser.add_argument('--pretrained_weights', type=str, default="models/ss_no_samples_50_norm_nosceduler_again/Model_42_gen.pth", help='pretrained weights. it can be none') # models/ucnet_trans3_baseline/Model_50_gen.pth
+    parser.add_argument('--save_model_path', type=str, default="models/ss_no_samples_50_norm_nosceduler_again_part2", help='dataset path')
     parser.add_argument('--aug', type=bool, default=False, help='Augmentation flag')
     parser.add_argument('--inter', type=bool, default=False, help='Inter pixel (differenct image) match if True, else intra pixel (same image) match.')
-    parser.add_argument('--no_samples', type=int, default=1000, help='number of pixels to consider in the contrastive loss')
+    parser.add_argument('--no_samples', type=int, default=50, help='number of pixels to consider in the contrastive loss')
     opt = parser.parse_args()
     return opt
 
@@ -285,7 +285,7 @@ if __name__=="__main__":
                 # print(gen_loss, gen_loss_cvae, gen_loss_gsnn, reg_loss, cont_loss)
                 gen_loss.backward()
                 generator_optimizer.step()
-                scheduler.step()
+                # scheduler.step()
 
                 if rate == 1:
                     loss_record.update(gen_loss.data, opt.batchsize)

@@ -3,7 +3,7 @@ from PIL import Image
 import torch.utils.data as data
 import torchvision.transforms as transforms
 import numpy as np
-
+import cv2
 
 class SalObjDataset(data.Dataset):
     def __init__(self, image_root, gt_root,trans_map_root, trainsize, aug):
@@ -140,5 +140,9 @@ class test_dataset:
         with open(path, 'rb') as f:
             img = Image.open(f)
             return img.convert('L')
+    
+    def grayscale_loader(self, path):
+        img = cv2.imread(path, cv2.IMREAD_GRAYSCALE)
+        return img
 
 

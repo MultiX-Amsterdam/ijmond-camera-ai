@@ -17,15 +17,12 @@ parser.add_argument('-langevin_step_size_des', type=float, default=0.026,help='s
 parser.add_argument('--energy_form', default='identity', help='tanh | sigmoid | identity | softplus')
 parser.add_argument('--latent_dim', type=int, default=3, help='latent dim')
 parser.add_argument('--feat_channel', type=int, default=32, help='reduced channel of saliency feat')
-
-parser.add_argument('--dataset_path', type=str, default="./data/SMOKE5K/SMOKE5K/SMOKE5K/test/img", help='path of the fodler where the test images are stored')
-parser.add_argument('--gt_path', type=str, default="./data/SMOKE5K/SMOKE5K/SMOKE5K/test/gt", help='path of the fodler where the test ground truth masks are stored')
-parser.add_argument('--save_path', type=str, default="./results/SMOKE5K_finetune", help='path to store the masks')
-
-# parser.add_argument('--dataset_path', type=str, default="./data/ijmond_data/test/img", help='path of the fodler where the test images are stored')
-# parser.add_argument('--gt_path', type=str, default="./data/ijmond_data/test/gt", help='path of the fodler where the test ground truth masks are stored')
-# parser.add_argument('--save_path', type=str, default="./results/ijmond_finetune", help='path to store the masks')
-
+# parser.add_argument('--dataset_path', type=str, default="./data/SMOKE5K/SMOKE5K/SMOKE5K/test/img", help='path of the fodler where the test images are stored')
+# parser.add_argument('--gt_path', type=str, default="./data/SMOKE5K/SMOKE5K/SMOKE5K/test/gt", help='path of the fodler where the test ground truth masks are stored')
+# parser.add_argument('--save_path', type=str, default="./results/SMOKE5K_finetune", help='path to store the masks')
+parser.add_argument('--dataset_path', type=str, default="./data/ijmond_data/test/img", help='path of the fodler where the test images are stored')
+parser.add_argument('--gt_path', type=str, default="./data/ijmond_data/test/gt", help='path of the fodler where the test ground truth masks are stored')
+parser.add_argument('--save_path', type=str, default="./results/test", help='path to store the masks')
 parser.add_argument('--model_path', type=str, default="./models/finetune/Model_50_gen.pth", help='path of the stored weights')
 opt = parser.parse_args()
 
@@ -47,7 +44,7 @@ def compute_energy(disc_score):
         energy = F.softplus(-disc_score.squeeze())
     return energy
 
-save_path =  opt.save_path #'./results/day/' + dataset+'/'
+save_path =  opt.save_path 
 if not os.path.exists(save_path):
     os.makedirs(save_path)
 
@@ -61,17 +58,19 @@ for i in range(test_loader.size):
     print(i)
     image, HH, WW, name = test_loader.load_data()
     image = image.cuda()
+    print(name)
 
     generator_pred = generator.forward(image, training=False)
     res = generator_pred
     res = F.upsample(res, size=[WW,HH], mode='bilinear', align_corners=False)
     res = res.sigmoid().data.cpu().numpy().squeeze()
     res = 255*(res - res.min()) / (res.max() - res.min() + 1e-8)
-    cv2.imwrite(os.path.join(save_path, name), res)
-
+    cv2.imwrite(os.path.join(save_path, name), res.astype(int))
+    
     gt_path = "{}/{}".format(opt.gt_path, name[:-4])
     gt = test_loader.load_gt(gt_path)
     gt = np.array(gt)
+    gt[gt>0]=255
     f_scroe = metrics.fscore( res, gt)
 
     print(f_scroe)

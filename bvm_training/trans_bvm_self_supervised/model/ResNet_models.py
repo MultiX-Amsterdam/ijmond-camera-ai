@@ -220,7 +220,7 @@ class Generator(nn.Module):
         else:
             _, mux, logvarx = self.x_encoder(x)
             z_noise = self.reparametrize(mux, logvarx)
-            _, self.prob_pred = self.sal_encoder(x, z_noise)
+            _, self.prob_pred, _ = self.sal_encoder(x, z_noise)
             return self.prob_pred
 
 

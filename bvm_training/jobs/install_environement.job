@@ -12,9 +12,12 @@ module purge
 module load 2022
 module load Anaconda3/2022.05
 
-# conda env create -f environment.yml
-source activate assignment1-part2-env
-# pip install opencv-python
-# pip install torchvision
+# Create the environment
+conda env create -f environment.yml
 
-conda env export > environment_2.yml
+# Activate the environment
+source activate assignment1-part2-env
+Install some extra libraries
+pip install opencv-python
+pip install torchvision
+# conda env export > environment_2.yml # export the environment

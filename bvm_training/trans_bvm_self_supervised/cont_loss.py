@@ -61,12 +61,17 @@ def intra_inter_contrastive_loss(features, masks, num_samples=100, margin=1.0, i
         if mean_smoke is None or mean_background is None:
             batch_size -= 1
             continue
+        # Normalize mean smoke and mean background
+        mean_smoke = F.normalize(mean_smoke, dim=0)
+        mean_background = F.normalize(mean_background, dim=0)
 
         # Sample features from each class within the same image
         if smoke_features.size(1) > num_samples:
             smoke_samples = smoke_features[:, torch.randperm(smoke_features.size(1))[:num_samples]] # 16 x 100
         else:
             smoke_samples = smoke_features
+        
+        smoke_features = F.normalize(smoke_features, dim=0)
         # print(smoke_samples.shape)
 
         # if background_features.size(1) > num_samples:
@@ -87,38 +92,7 @@ def intra_inter_contrastive_loss(features, masks, num_samples=100, margin=1.0, i
             # loss = torch.div(torch.add(smoke_loss, background_loss), 2)
             # print(loss)
             total_loss += smoke_loss
-        else:
-            # Inter-image contrastive loss
-            # Select a different image from the batch for comparison
-            j = np.random.choice(np.delete(np.arange(batch_size), i))
-    #         inter_feature_map = features[j]
-    #         inter_mask = masks[j]
 
-    #         # Separate features into smoke and background based on mask for the inter image
-    #         inter_smoke_features = inter_feature_map[:, inter_mask == 1].view(feature_dim, -1) if (inter_mask == 1).any() else None
-    #         inter_background_features = inter_feature_map[:, inter_mask == 0].view(feature_dim, -1) if (inter_mask == 0).any() else None
-
-    #         # Compute mean feature vectors for smoke and background in the inter image
-    #         inter_mean_smoke = inter_smoke_features.mean(dim=1, keepdim=True) if inter_smoke_features is not None else None
-    #         inter_mean_background = inter_background_features.mean(dim=1, keepdim=True) if inter_background_features is not None else None
-
-    #         # Compute positive and negative losses between different images
-    #         if inter_mean_smoke is not None:
-    #             pos_smoke_loss = (smoke_samples - inter_mean_smoke).pow(2).sum(dim=0).mean()
-    #             neg_background_loss = F.relu(margin - (smoke_samples - inter_mean_background).pow(2).sum(dim=0)).mean() if inter_mean_background is not None else 0
-    #         else:
-    #             pos_smoke_loss = 0
-    #             neg_background_loss = 0
-
-    #         if inter_mean_background is not None:
-    #             pos_background_loss = (background_samples - inter_mean_background).pow(2).sum(dim=0).mean()
-    #             neg_smoke_loss = F.relu(margin - (background_samples - inter_mean_smoke).pow(2).sum(dim=0)).mean() if inter_mean_smoke is not None else 0
-    #         else:
-    #             pos_background_loss = 0
-    #             neg_smoke_loss = 0
-
-    #         # Combine losses for inter-image
-    #         loss += pos_smoke_loss + pos_background_loss + neg_smoke_loss + neg_background_loss
 
     return total_loss / batch_size
 

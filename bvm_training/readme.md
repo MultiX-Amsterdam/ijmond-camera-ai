@@ -1,5 +1,10 @@
 # Traing of BVM model
 
+This repository contains code from the following two papers:
+1. [`Transmission-Guided Bayesian Generative Model for Smoke Segmentation`](https://arxiv.org/pdf/2303.00900)
+2. [`Local contrastive loss with pseudo-label based self-training for semi-supervised medical image segmentation Paper`](https://arxiv.org/pdf/2112.09645)
+
+
 ## Structure of file system
 ```
 └── bvm_training # the root folder
@@ -14,7 +19,7 @@
     └── tranmission_map.py # this file creates for all the transmitted images.
 ```
 ## Input folder
-In the case of SMOKE5K dataset, you can download the zip from the [`link`](hhttps://drive.google.com/file/d/11TM8hsh9R6ZTvLAUzfD6eD051MbOufCi/view). Place the zip in a folder named "data" (or you can use a different name). The unziping of this file can be done in python by the transmission_map.py. After the file is unzipped, the folder structure will be the following:
+In the case of SMOKE5K dataset, you can download the zip from the [`link`](https://drive.google.com/file/d/11TM8hsh9R6ZTvLAUzfD6eD051MbOufCi/view). Place the zip in a folder named "data" (or you can use a different name). The unziping of this file can be done in python by the transmission_map.py. After the file is unzipped, the folder structure will be the following:
 
 ```
 └── data # the root folder of data
@@ -109,3 +114,21 @@ For snellius, use the following command by changing the arguments when necessary
 ```
 sbatch jobs/train.job
 ```
+
+## Evaluation
+In order to get the evaluation metrics you can use the eval.py from each trans_bvm version (the original and the semi-supervised). eval_opacity.py is used to calculate the metrics for the high and low opacity smoke seperately.
+
+For the SMOKE5K dataset:
+```
+python trans_bvm/eval.py --dataset_path "./data/SMOKE5K/SMOKE5K/SMOKE5K/test/img" --gt_path "./data/SMOKE5K/SMOKE5K/SMOKE5K/test/gt" --save_path "./results/" --model_path "./models/finetune/Model_50_gen.pth"
+
+python trans_bvm/eval_opacity.py --dataset_path "./data/SMOKE5K/SMOKE5K/SMOKE5K/test/img" --gt_path "./data/SMOKE5K/SMOKE5K/SMOKE5K/test/gt" --save_path "./results/" --model_path "./models/finetune/Model_50_gen.pth"
+```
+
+For the custom dateset:
+```
+python trans_bvm/eval.py --dataset_path "./data/ijmond_data/test/img" --gt_path "./data/ijmond_data/test/gt" --save_path "./results/" --model_path "./models/finetune/Model_50_gen.pth"
+
+python trans_bvm/eval_opacity.py --dataset_path "./data/ijmond_data/test/img" --gt_path "./data/ijmond_data/test/gt" --save_path "./results/" --model_path "./models/finetune/Model_50_gen.pth"
+```
+For the semi-supervised model you can use the same exactly commands.

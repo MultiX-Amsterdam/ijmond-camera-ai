@@ -1,6 +1,6 @@
 #!/bin/bash
 
-#SBATCH --partition=gpu_mig
+#SBATCH --partition=gpu
 #SBATCH --gpus=1
 #SBATCH --job-name=train_sparse_encoder
 #SBATCH --ntasks=1
@@ -16,10 +16,16 @@ module load Anaconda3/2022.05
 
 # Activate your environment
 source activate assignment1-part2-env
-# pip install torchvision --upgrade
 
+# Change the arguments to the python files as needed!!!
+
+# Create the transmission maps
 # python transmission_map.py #--dataset "SMOKE5K.zip" --output "SMOKE5K/SMOKE5K" --mode "train_extention"
-# python trans_bvm/train.py
-python trans_bvm_self_supervised/train.py 
+
+# Training
+# python trans_bvm/train.py # original bvm model
+python trans_bvm_self_supervised/train.py # self supervised version
+
+# Testing and video creation
 # python trans_bvm/test.py
 # python make_video.py

@@ -15,6 +15,6 @@ on the system, please use 'module avail' or 'module spider' to search for it.
 ============================================================================================== 
 /home/scur2320/.conda/envs/assignment1-part2-env/lib/python3.10/site-packages/torch/utils/data/dataloader.py:558: UserWarning: This DataLoader will create 12 worker processes in total. Our suggested max number of worker in current system is 9, which is smaller than what this DataLoader is going to create. Please be aware that excessive worker creation might get DataLoader running slow or even freeze, lower the worker number to avoid potential slowness/freeze if necessary.
   warnings.warn(_create_warning_msg(
-slurmstepd: error: *** JOB 7219332 ON gcn2 CANCELLED AT 2024-07-29T22:45:41 ***
-slurmstepd: error: container_p_join: open failed for /slurm/7219332/.ns: No such file or directory
-slurmstepd: error: container_g_join(7219332): No such file or directory
+slurmstepd: error: *** JOB 7246872 ON gcn2 CANCELLED AT 2024-07-31T20:16:25 DUE TO TIME LIMIT ***
+slurmstepd: error: container_p_join: open failed for /slurm/7246872/.ns: No such file or directory
+slurmstepd: error: container_g_join(7246872): No such file or directory
