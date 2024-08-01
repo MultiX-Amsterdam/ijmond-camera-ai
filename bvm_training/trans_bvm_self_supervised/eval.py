@@ -23,7 +23,7 @@ parser.add_argument('--save_path', type=str, default="./results/SMOKE5K_no_sampl
 parser.add_argument('--dataset_path', type=str, default="./data/ijmond_data/test/img", help='path of the fodler where the test images are stored')
 parser.add_argument('--gt_path', type=str, default="./data/ijmond_data/test/gt", help='path of the fodler where the test ground truth masks are stored')
 parser.add_argument('--save_path', type=str, default="./results/testing2", help='path to store the masks')
-parser.add_argument('--model_path', type=str, default="./models/ss_no_samples_50_norm_nosceduler_again", help='path of the stored weights')
+parser.add_argument('--model_path', type=str, default="./models/ss_no_samples_50_norm_nosceduler_again/Model_42_gen.pth", help='path of the stored weights')
 parser.add_argument('--num_filters', type=int, default=16, help='channel of for the final contrastive loss specific layer')
 opt = parser.parse_args()
 
@@ -96,7 +96,5 @@ def evaluation(model_path):
     print(f"mMSE: {mse_/test_loader.size}")
     print(f"mIOU: {iou_total/test_loader.size}")
 
-for model_path in sorted(os.listdir(opt.model_path)):
-    print(model_path)
-    if model_path == "Model_42_gen.pth":
-        evaluation(os.path.join(opt.model_path, model_path))
+
+evaluation(opt.model_path)
