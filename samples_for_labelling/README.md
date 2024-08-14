@@ -90,3 +90,14 @@ Structure of files system:
                 ├── crop.png # the cropped image in the video frame
                 └── metadata.json # storing the bounding box information
 ```
+Structure in the metadata.json file:
+```sh
+{
+    "boxes": [x, y, w, h],  # bounding box based on the original video frame (not cropped)
+    "relative_boxes": [x, y, w, h], # bounding box based on the cropped region
+    "image_width": w, # width of the original video frame
+    "image_height": h, # height of the original video frame
+    "cropped_width": cw, # width of the cropped region
+    "cropped_height": ch, # height of the cropped region
+}
+```
