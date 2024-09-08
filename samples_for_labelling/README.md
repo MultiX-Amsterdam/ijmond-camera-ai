@@ -101,3 +101,4 @@ Structure in the metadata.json file:
     "cropped_height": ch, # height of the cropped region
 }
 ```
+See the `example_output` folder for examples.
