@@ -7,4 +7,3 @@
 *.db
 *.log*
 *screenlog*
-samples_for_labelling/**/bbox_batch_1/
