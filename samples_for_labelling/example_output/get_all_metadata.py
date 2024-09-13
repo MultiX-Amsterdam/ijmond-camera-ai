@@ -30,8 +30,9 @@ for video_folder in os.listdir(root_folder):
     with open(video_json_path, 'r') as f:
         video_data = json.load(f)
 
-    # Extract video_id from video.json
+    # Extract video metadata from video.json
     video_id = video_data.get('id')
+    video_timestamp = video_data.get('start_time')
 
     # Loop through frame folders inside each video folder
     for frame_folder in os.listdir(video_folder_path):
@@ -58,11 +59,13 @@ for video_folder in os.listdir(root_folder):
                     metadata = json.load(f)
 
                 # Prepare the combined data entry
+                # Note that the frame_timestamp here uses the one from the video
                 data_entry = {
                     "mask_file_name": "mask.png",
                     "image_file_name": "crop.png",
                     "file_path": mask_folder_path + '/',  # Ensure the path ends with a slash
                     "frame_number": int(frame_folder),
+                    "frame_timestamp": int(video_timestamp),
                     "video_id": video_id,
                     "relative_boxes": metadata.get("relative_boxes"),
                     "cropped_width": metadata.get("cropped_width"),
