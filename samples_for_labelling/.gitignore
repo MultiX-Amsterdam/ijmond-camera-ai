@@ -15,3 +15,4 @@ sample_names_total.txt
 collect_sample_names.py
 bbox_reduced
 bbox_extra
+bbox_new
