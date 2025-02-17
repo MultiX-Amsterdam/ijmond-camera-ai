@@ -47,7 +47,6 @@ for video_folder in os.listdir(root_folder):
                 frame_metadata = json.load(f)
         frame_number = frame_metadata.get("frame_numer")
         frame_file_name = frame_metadata.get("frame_file_name")
-        frame_file_path = frame_metadata.get("frame_file_path")
 
         # Loop through mask folders inside each frame folder
         for mask_folder in os.listdir(frame_folder_path):
@@ -73,20 +72,21 @@ for video_folder in os.listdir(root_folder):
                 # - The third level is the segmentation image, which could be an image that is cropped from the video frame, or just the video frame itself
                 # The reason for such setup is for flexibility
                 data_entry = {
-                    "mask_file_name": "mask.png",  # file name of the segmentation mask
-                    "image_file_name": "crop.png", # file name of the segmentation image
-                    "file_path": mask_folder_path + "/",  # ensure the path ends with a slash
+                    "mask_file_name": metadata.get("mask_file_name"),  # file name of the segmentation mask
+                    "crop_file_name": metadata.get("crop_file_name"), # file name of the segmentation image
+                    "bbox_file_name": metadata.get("bbox_file_name"), # file name of the bounding box on top of the image
+                    "mask_file_directory": mask_folder_path + "/", # directory to the segmentation mask and image files
                     "frame_timestamp": int(video_timestamp), # timestamp of the video frame
                     "video_id": video_id, # ID of the video on IJmondCAM https://ijmondcam.multix.io/
-                    "frame_boxes": metadata.get("boxes"), # the bounding box location relative to the video frame
-                    "frame_width": metadata.get("image_width"), # width of the video frame
-                    "frame_height": metadata.get("image_height"), # height of the video frame
+                    "boxes": metadata.get("boxes"), # the bounding box location relative to the video frame
+                    "image_width": metadata.get("image_width"), # width of the video frame
+                    "image_height": metadata.get("image_height"), # height of the video frame
                     "relative_boxes": metadata.get("relative_boxes"), # the bounding box location relative to the segmentation image
                     "cropped_width": metadata.get("cropped_width"), # width of the cropped image for segmentation
                     "cropped_height": metadata.get("cropped_height"), # height of the cropped image for segmentation
                     "frame_number": frame_number, # the frame number in the original video
                     "frame_file_name": frame_file_name, # file name of the video frame
-                    "frame_file_path": frame_file_path + "/",  # ensure the path ends with a slash
+                    "frame_file_directory": frame_folder_path + "/", # directory to the video frame
                     "x_image": metadata.get("x_image"), # x coordinate of the top left corner of the segmentation image relative to the video frame
                     "y_image": metadata.get("y_image"), # y coordinate of the top left corner of the segmentation image relative to the video frame
                     "number_of_frames": number_of_frames, # number of frames in the original video

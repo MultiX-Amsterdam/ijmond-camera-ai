@@ -46,7 +46,6 @@ def labels_selection(selected_frames, mask_folder_fullpath, input_folder_fullpat
         sub_images, sub_images_with_bbox, bbox, sub_masks = create_sub_images(
                 os.path.join(mask_folder_fullpath, vid, file),
                 image_rgb,
-                file.split(".")[0],
                 use_full_size=True)
         for i, sub_image in enumerate(sub_images):
             # Store the cropped frame
