@@ -6,14 +6,28 @@ The combined metadata will be used for the following application:
 (for entering the metadata in to the database)
     - https://github.com/MultiX-Amsterdam/ijmond-camera-monitor
 
-The "bbox_batch_1" contains the output from the samples_for_labelling tool.
+The "bbox_batch_1" folder should contain the output after running the `sample_masks.py` script.
+
+Usage:
+python get_all_metadata.py --root_folder bbox_batch_example --output_file combined_metadata.json
+python get_all_metadata.py --root_folder bbox_batch_1 --output_file segmentation_dataset_1.json
 """
 
 import os
 import json
+import argparse
 
-# Root folder where the data is stored
-root_folder = "bbox_batch_1"
+def args_parser():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--root_folder", type=str, default="bbox_batch_example")
+    parser.add_argument("--output_file", type=str, default="combined_metadata.json")
+    opt = parser.parse_args()
+    return opt
+
+# Parse arguments
+opt = args_parser()
+root_folder = opt.root_folder # root folder where the data is stored
+output_file = opt.output_file # output file name
 
 # List to store combined data
 combined_data = []
@@ -96,7 +110,6 @@ for video_folder in os.listdir(root_folder):
                 combined_data.append(data_entry)
 
 # Save combined data to a JSON file
-output_file = "combined_metadata.json"
 with open(output_file, "w") as f:
     json.dump(combined_data, f, indent=4)
 
