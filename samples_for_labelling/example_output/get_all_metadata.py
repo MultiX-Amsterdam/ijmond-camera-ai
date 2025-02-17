@@ -13,7 +13,7 @@ import os
 import json
 
 # Root folder where the data is stored
-root_folder = 'bbox_batch_1'
+root_folder = "bbox_batch_1"
 
 # List to store combined data
 combined_data = []
@@ -23,16 +23,14 @@ for video_folder in os.listdir(root_folder):
     video_folder_path = os.path.join(root_folder, video_folder)
 
     # Load video.json file
-    video_json_path = os.path.join(video_folder_path, 'video.json')
+    video_json_path = os.path.join(video_folder_path, "video.json")
     if not os.path.exists(video_json_path):
         continue
-
-    with open(video_json_path, 'r') as f:
+    with open(video_json_path, "r") as f:
         video_data = json.load(f)
-
-    # Extract video metadata from video.json
-    video_id = video_data.get('id')
-    video_timestamp = video_data.get('start_time')
+    video_id = video_data.get("id")
+    video_timestamp = video_data.get("start_time")
+    number_of_frames = video_data.get("number_of_frames")
 
     # Loop through frame folders inside each video folder
     for frame_folder in os.listdir(video_folder_path):
@@ -43,10 +41,13 @@ for video_folder in os.listdir(root_folder):
             continue
 
         # Load frame metadata
-        frame_json_path = os.path.join(frame_folder_path, 'frame_metadata.json')
+        frame_json_path = os.path.join(frame_folder_path, "frame_metadata.json")
         if os.path.exists(frame_json_path):
-            with open(frame_json_path, 'r') as f:
+            with open(frame_json_path, "r") as f:
                 frame_metadata = json.load(f)
+        frame_number = frame_metadata.get("frame_numer")
+        frame_file_name = frame_metadata.get("frame_file_name")
+        frame_file_path = frame_metadata.get("frame_file_path")
 
         # Loop through mask folders inside each frame folder
         for mask_folder in os.listdir(frame_folder_path):
@@ -57,31 +58,38 @@ for video_folder in os.listdir(root_folder):
                 continue
 
             # Path to metadata.json file
-            metadata_json_path = os.path.join(mask_folder_path, 'metadata.json')
+            metadata_json_path = os.path.join(mask_folder_path, "metadata.json")
 
             # Check if metadata.json exists
             if os.path.exists(metadata_json_path):
-                with open(metadata_json_path, 'r') as f:
+                with open(metadata_json_path, "r") as f:
                     metadata = json.load(f)
 
                 # Prepare the combined data entry
                 # Note that the frame_timestamp here uses the one from the video
+                # Notice that we have three levels here:
+                # - The first level is the panorama, such as the original video on https://breathecam.multix.io/
+                # - The second level is the video frame, which could be a frame of a video that is cropped from the panorama, or just the panorama itself
+                # - The third level is the segmentation image, which could be an image that is cropped from the video frame, or just the video frame itself
+                # The reason for such setup is for flexibility
                 data_entry = {
-                    "mask_file_name": "mask.png",
-                    "image_file_name": "crop.png",
-                    "file_path": mask_folder_path + '/',  # Ensure the path ends with a slash
-                    "frame_number": int(frame_folder),
-                    "frame_timestamp": int(video_timestamp),
-                    "video_id": video_id,
-                    "boxes": metadata.get("boxes"),
-                    "image_width": metadata.get("image_width"),
-                    "image_height": metadata.get("image_height"),
-                    "relative_boxes": metadata.get("relative_boxes"),
-                    "cropped_width": metadata.get("cropped_width"),
-                    "cropped_height": metadata.get("cropped_height"),
-                    "frame_number": frame_metadata.get("frame_numer"),
-                    "frame_file_name": frame_metadata.get("frame_file_name"),
-                    "frame_file_path": frame_metadata.get("frame_file_path") + '/'  # Ensure the path ends with a slash
+                    "mask_file_name": "mask.png",  # file name of the segmentation mask
+                    "image_file_name": "crop.png", # file name of the segmentation image
+                    "file_path": mask_folder_path + "/",  # ensure the path ends with a slash
+                    "frame_timestamp": int(video_timestamp), # timestamp of the video frame
+                    "video_id": video_id, # ID of the video on IJmondCAM https://ijmondcam.multix.io/
+                    "frame_boxes": metadata.get("boxes"), # the bounding box location relative to the video frame
+                    "frame_width": metadata.get("image_width"), # width of the video frame
+                    "frame_height": metadata.get("image_height"), # height of the video frame
+                    "relative_boxes": metadata.get("relative_boxes"), # the bounding box location relative to the segmentation image
+                    "cropped_width": metadata.get("cropped_width"), # width of the cropped image for segmentation
+                    "cropped_height": metadata.get("cropped_height"), # height of the cropped image for segmentation
+                    "frame_number": frame_number, # the frame number in the original video
+                    "frame_file_name": frame_file_name, # file name of the video frame
+                    "frame_file_path": frame_file_path + "/",  # ensure the path ends with a slash
+                    "x_image": metadata.get("x_image"), # x coordinate of the top left corner of the segmentation image relative to the video frame
+                    "y_image": metadata.get("y_image"), # y coordinate of the top left corner of the segmentation image relative to the video frame
+                    "number_of_frames": number_of_frames, # number of frames in the original video
                 }
 
                 # Append the entry to the list
@@ -89,7 +97,7 @@ for video_folder in os.listdir(root_folder):
 
 # Save combined data to a JSON file
 output_file = "combined_metadata.json"
-with open(output_file, 'w') as f:
+with open(output_file, "w") as f:
     json.dump(combined_data, f, indent=4)
 
 print(f"Combined metadata has been written to {output_file}")

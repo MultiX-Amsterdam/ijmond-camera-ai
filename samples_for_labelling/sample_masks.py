@@ -12,15 +12,15 @@ import argparse
 
 def args_parser():
     parser = argparse.ArgumentParser()
-    parser.add_argument('--data_folder', type=str, default="data")
-    parser.add_argument('--mask_folder', type=str, default="masks")
-    parser.add_argument('--input_folder', type=str, default="frames")
-    parser.add_argument('--output_folder', type=str, default="bbox_reduced")
-    parser.add_argument('--store_bbox', type=bool, default=True)
-    parser.add_argument('--feature_folder', type=str, default='data/features')
-    parser.add_argument('--num_clusters', type=int, default=3)
-    parser.add_argument('--num_elements', type=int, default=1, help="Number of elements to select from each cluster")
-    parser.add_argument('--video_metadata', type=str, default='metadata_ijmond_jan_22_2024.json')
+    parser.add_argument("--data_folder", type=str, default="data")
+    parser.add_argument("--mask_folder", type=str, default="masks")
+    parser.add_argument("--input_folder", type=str, default="frames")
+    parser.add_argument("--output_folder", type=str, default="bbox_reduced")
+    parser.add_argument("--store_bbox", type=bool, default=True)
+    parser.add_argument("--feature_folder", type=str, default="data/features")
+    parser.add_argument("--num_clusters", type=int, default=3)
+    parser.add_argument("--num_elements", type=int, default=1, help="Number of elements to select from each cluster")
+    parser.add_argument("--video_metadata", type=str, default="metadata_ijmond_jan_22_2024.json")
     opt = parser.parse_args()
     return opt
 
@@ -37,7 +37,6 @@ def labels_selection(selected_frames, mask_folder_fullpath, input_folder_fullpat
         store_bbox: A boolean to store the bounding boxes.
         vid: The video name.
     Returns:
-        coordinates: A list containing the metadata of the sub-images.
         num_sum_images: The number of sub-images.
     """
     num_sum_images = 0
@@ -94,7 +93,7 @@ def labels_selection(selected_frames, mask_folder_fullpath, input_folder_fullpat
     return num_sum_images
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     opt = args_parser()
     data_folder = opt.data_folder
     mask_folder = opt.mask_folder
@@ -109,18 +108,17 @@ if __name__ == '__main__':
     total_samples = 0 # the number of boxes
     total_num_frames = 0 # the number of frames
     debug = True # the flag for debugging
-
     video_metadata = load_json(opt.video_metadata)
-
     video_names = ["_1jFnujWn50-0", "zl6ckY2YM8c-2", "zOt2vMuYLx4-0"]
     video_lookup = {v["file_name"]: v for v in video_metadata}
 
     for vid in os.listdir(feature_folder):
         # For every video, we will select the closest elements to the clusters' center
-        if debug and vid.split('_output')[0] not in video_names:
+        vid_name = vid.split("_output")[0]
+        if debug and vid_name not in video_names:
              continue
         print("="*20)
-        print(vid.split('_output')[0])
+        print(vid_name)
         vid_path = os.path.join(feature_folder, vid)
         features = load_pickle(vid_path)
 
@@ -196,12 +194,12 @@ if __name__ == '__main__':
                 input_folder_fullpath,
                 output_folder,
                 store_bbox,
-                vid.split('_output')[0])
+                vid_name)
 
         # Store the metadata of the video in a json file
         if num_sum_images != 0:
-            with open(os.path.join(output_folder, vid.split('_output')[0], "video.json"), "w") as f:
-                d = video_lookup[vid.split('_output')[0]]
+            with open(os.path.join(output_folder, vid_name, "video.json"), "w") as f:
+                d = video_lookup[vid_name]
                 d["number_of_frames"] = number_of_frames
                 json.dump(d, f)
 

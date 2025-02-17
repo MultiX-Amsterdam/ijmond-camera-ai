@@ -49,14 +49,13 @@ def find_cropped_bbox(x, w, size, image_size):
     return int(min_x), int(max_x)
 
 
-def create_sub_images(mask_path, image_rgb, frame, use_full_size=True):
+def create_sub_images(mask_path, image_rgb, use_full_size=True):
     """
     Creates sub-images based on the white regions from a binary mask.
     Args:
         mask_path: the path for the mask
         image_rgb: the image in RGB format
-        frame: the frame names
-        no_cropping: if the sub-images should use the full size of the frame or not
+        use_full_size: if the sub-images should use the full size of the frame or not
     Returns:
         A list of sub-images containing the white regions from the mask.
     """
@@ -97,6 +96,8 @@ def create_sub_images(mask_path, image_rgb, frame, use_full_size=True):
             relative_y = y
             cropped_width = bn_mask.shape[0]
             cropped_height = bn_mask.shape[1]
+            x_image = 0
+            y_image = 0
         else:
             # Skip if the bounding box is too big
             if w >= size or h >= size:
@@ -112,6 +113,9 @@ def create_sub_images(mask_path, image_rgb, frame, use_full_size=True):
             # Define the width and height of the cropped region
             cropped_width = size
             cropped_height = size
+            # Define the x and y of the top left corner of the rectangle relative to the original image
+            x_image = min_x
+            y_image = min_y
 
         temp_img = sub_image.copy()
         color = (0, 255, 0) # green box bolor
@@ -128,7 +132,9 @@ def create_sub_images(mask_path, image_rgb, frame, use_full_size=True):
                 "image_width": bn_mask.shape[0],
                 "image_height": bn_mask.shape[1],
                 "cropped_width": cropped_width,
-                "cropped_height": cropped_height
+                "cropped_height": cropped_height,
+                "x_image": x_image,
+                "y_image": y_image
             }
         )
 
