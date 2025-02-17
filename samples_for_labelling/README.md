@@ -149,4 +149,39 @@ In our case, the cropped image is exactly the original video frame since we did 
 }
 ```
 
-See the `example_output` folder for examples. After producing the folder structure and the files, run the `get_all_metadata.py` file in the `example_output` folder to produce a file `combined_metadata.json`, which will be used to add the data to the IJmondCAM tool using the [`add_segment.py`](https://github.com/MultiX-Amsterdam/ijmond-camera-monitor/blob/main/back-end/www/add_segment.py) script.
+See the `example_output` folder for examples. After producing the folder structure and the files, run the `get_all_metadata.py` file in the `example_output` folder to produce a file `combined_metadata.json`, which will be used to add the data to the IJmondCAM tool using the [`add_segment.py`](https://github.com/MultiX-Amsterdam/ijmond-camera-monitor/blob/main/back-end/www/add_segment.py) script. Below is the structure of the `combined_metadata.json` file:
+```json
+[
+    {
+        "mask_file_name": "mask.png",
+        "crop_file_name": "crop.png",
+        "bbox_file_name": "crop_with_bbox.png",
+        "mask_file_directory": "bbox_batch_1/_1jFnujWn50-0/21/_1jFnujWn50-0-21-0/", # directory to the segmentation mask and image files (with the root folder name and a "/" at the end)
+        "frame_timestamp": 1686975462, # timestamp of the video frame (this is copied from the video timestamp)
+        "video_id": 656,
+        "boxes": {
+            "x": 804,
+            "y": 828,
+            "w": 72,
+            "h": 72
+        },
+        "image_width": 900,
+        "image_height": 900,
+        "relative_boxes": {
+            "x": 804,
+            "y": 828,
+            "w": 72,
+            "h": 72
+        },
+        "cropped_width": 900,
+        "cropped_height": 900,
+        "frame_number": 21,
+        "frame_file_name": "_1jFnujWn50-0-21.png",
+        "frame_file_directory": "bbox_batch_1/_1jFnujWn50-0/21/", # directory to the video frame (with the root folder name and a "/" at the end)
+        "x_image": 0,
+        "y_image": 0,
+        "number_of_frames": 36
+    },
+    ...
+]
+```
