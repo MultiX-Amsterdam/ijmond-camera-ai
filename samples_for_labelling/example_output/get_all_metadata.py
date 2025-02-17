@@ -13,7 +13,7 @@ import os
 import json
 
 # Root folder where the data is stored
-root_folder = "bbox_batch_1"
+root_folder = 'bbox_batch_1'
 
 # List to store combined data
 combined_data = []
@@ -42,6 +42,12 @@ for video_folder in os.listdir(root_folder):
         if not os.path.isdir(frame_folder_path):
             continue
 
+        # Load frame metadata
+        frame_json_path = os.path.join(frame_folder_path, 'frame_metadata.json')
+        if os.path.exists(frame_json_path):
+            with open(frame_json_path, 'r') as f:
+                frame_metadata = json.load(f)
+
         # Loop through mask folders inside each frame folder
         for mask_folder in os.listdir(frame_folder_path):
             mask_folder_path = os.path.join(frame_folder_path, mask_folder)
@@ -67,9 +73,15 @@ for video_folder in os.listdir(root_folder):
                     "frame_number": int(frame_folder),
                     "frame_timestamp": int(video_timestamp),
                     "video_id": video_id,
+                    "boxes": metadata.get("boxes"),
+                    "image_width": metadata.get("image_width"),
+                    "image_height": metadata.get("image_height"),
                     "relative_boxes": metadata.get("relative_boxes"),
                     "cropped_width": metadata.get("cropped_width"),
-                    "cropped_height": metadata.get("cropped_height")
+                    "cropped_height": metadata.get("cropped_height"),
+                    "frame_number": frame_metadata.get("frame_numer"),
+                    "frame_file_name": frame_metadata.get("frame_file_name"),
+                    "frame_file_path": frame_metadata.get("frame_file_path") + '/'  # Ensure the path ends with a slash
                 }
 
                 # Append the entry to the list

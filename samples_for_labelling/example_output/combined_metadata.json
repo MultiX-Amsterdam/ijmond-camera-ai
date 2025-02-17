@@ -2,145 +2,313 @@
     {
         "mask_file_name": "mask.png",
         "image_file_name": "crop.png",
-        "file_path": "bbox_batch_1/FNKYVizUslc-1/10/FNKYVizUslc-1-10-0/",
-        "frame_number": 10,
-        "frame_timestamp": 1684579238,
-        "video_id": 1,
-        "relative_boxes": {
-            "x": 0,
-            "y": 225,
-            "w": 18,
-            "h": 62
+        "file_path": "bbox_batch_1/_1jFnujWn50-0/27/_1jFnujWn50-0-27-1/",
+        "frame_number": 27,
+        "frame_timestamp": 1686975462,
+        "video_id": 656,
+        "boxes": {
+            "x": 395,
+            "y": 133,
+            "w": 33,
+            "h": 43
         },
-        "cropped_width": 512,
-        "cropped_height": 512
+        "image_width": 900,
+        "image_height": 900,
+        "relative_boxes": {
+            "x": 395,
+            "y": 133,
+            "w": 33,
+            "h": 43
+        },
+        "cropped_width": 900,
+        "cropped_height": 900,
+        "frame_file_name": "_1jFnujWn50-0-27.png",
+        "frame_file_path": "_1jFnujWn50-0/27/"
     },
     {
         "mask_file_name": "mask.png",
         "image_file_name": "crop.png",
-        "file_path": "bbox_batch_1/FNKYVizUslc-1/22/FNKYVizUslc-1-22-0/",
-        "frame_number": 22,
-        "frame_timestamp": 1684579238,
-        "video_id": 1,
-        "relative_boxes": {
-            "x": 0,
-            "y": 234,
-            "w": 26,
-            "h": 45
+        "file_path": "bbox_batch_1/_1jFnujWn50-0/27/_1jFnujWn50-0-27-0/",
+        "frame_number": 27,
+        "frame_timestamp": 1686975462,
+        "video_id": 656,
+        "boxes": {
+            "x": 525,
+            "y": 718,
+            "w": 283,
+            "h": 182
         },
-        "cropped_width": 512,
-        "cropped_height": 512
+        "image_width": 900,
+        "image_height": 900,
+        "relative_boxes": {
+            "x": 525,
+            "y": 718,
+            "w": 283,
+            "h": 182
+        },
+        "cropped_width": 900,
+        "cropped_height": 900,
+        "frame_file_name": "_1jFnujWn50-0-27.png",
+        "frame_file_path": "_1jFnujWn50-0/27/"
     },
     {
         "mask_file_name": "mask.png",
         "image_file_name": "crop.png",
-        "file_path": "bbox_batch_1/S1Juid0Wi8M-3/29/S1Juid0Wi8M-3-29-0/",
+        "file_path": "bbox_batch_1/_1jFnujWn50-0/21/_1jFnujWn50-0-21-0/",
+        "frame_number": 21,
+        "frame_timestamp": 1686975462,
+        "video_id": 656,
+        "boxes": {
+            "x": 804,
+            "y": 828,
+            "w": 72,
+            "h": 72
+        },
+        "image_width": 900,
+        "image_height": 900,
+        "relative_boxes": {
+            "x": 804,
+            "y": 828,
+            "w": 72,
+            "h": 72
+        },
+        "cropped_width": 900,
+        "cropped_height": 900,
+        "frame_file_name": "_1jFnujWn50-0-21.png",
+        "frame_file_path": "_1jFnujWn50-0/21/"
+    },
+    {
+        "mask_file_name": "mask.png",
+        "image_file_name": "crop.png",
+        "file_path": "bbox_batch_1/_1jFnujWn50-0/21/_1jFnujWn50-0-21-1/",
+        "frame_number": 21,
+        "frame_timestamp": 1686975462,
+        "video_id": 656,
+        "boxes": {
+            "x": 286,
+            "y": 60,
+            "w": 170,
+            "h": 149
+        },
+        "image_width": 900,
+        "image_height": 900,
+        "relative_boxes": {
+            "x": 286,
+            "y": 60,
+            "w": 170,
+            "h": 149
+        },
+        "cropped_width": 900,
+        "cropped_height": 900,
+        "frame_file_name": "_1jFnujWn50-0-21.png",
+        "frame_file_path": "_1jFnujWn50-0/21/"
+    },
+    {
+        "mask_file_name": "mask.png",
+        "image_file_name": "crop.png",
+        "file_path": "bbox_batch_1/_1jFnujWn50-0/21/_1jFnujWn50-0-21-2/",
+        "frame_number": 21,
+        "frame_timestamp": 1686975462,
+        "video_id": 656,
+        "boxes": {
+            "x": 245,
+            "y": 19,
+            "w": 20,
+            "h": 30
+        },
+        "image_width": 900,
+        "image_height": 900,
+        "relative_boxes": {
+            "x": 245,
+            "y": 19,
+            "w": 20,
+            "h": 30
+        },
+        "cropped_width": 900,
+        "cropped_height": 900,
+        "frame_file_name": "_1jFnujWn50-0-21.png",
+        "frame_file_path": "_1jFnujWn50-0/21/"
+    },
+    {
+        "mask_file_name": "mask.png",
+        "image_file_name": "crop.png",
+        "file_path": "bbox_batch_1/zOt2vMuYLx4-0/29/zOt2vMuYLx4-0-29-1/",
         "frame_number": 29,
-        "frame_timestamp": 1687199436,
-        "video_id": 78,
+        "frame_timestamp": 1681726017,
+        "video_id": 482,
+        "boxes": {
+            "x": 203,
+            "y": 440,
+            "w": 271,
+            "h": 252
+        },
+        "image_width": 900,
+        "image_height": 900,
         "relative_boxes": {
-            "x": 470,
-            "y": 64,
-            "w": 23,
+            "x": 203,
+            "y": 440,
+            "w": 271,
+            "h": 252
+        },
+        "cropped_width": 900,
+        "cropped_height": 900,
+        "frame_file_name": "zOt2vMuYLx4-0-29.png",
+        "frame_file_path": "zOt2vMuYLx4-0/29/"
+    },
+    {
+        "mask_file_name": "mask.png",
+        "image_file_name": "crop.png",
+        "file_path": "bbox_batch_1/zOt2vMuYLx4-0/29/zOt2vMuYLx4-0-29-0/",
+        "frame_number": 29,
+        "frame_timestamp": 1681726017,
+        "video_id": 482,
+        "boxes": {
+            "x": 185,
+            "y": 650,
+            "w": 36,
+            "h": 22
+        },
+        "image_width": 900,
+        "image_height": 900,
+        "relative_boxes": {
+            "x": 185,
+            "y": 650,
+            "w": 36,
+            "h": 22
+        },
+        "cropped_width": 900,
+        "cropped_height": 900,
+        "frame_file_name": "zOt2vMuYLx4-0-29.png",
+        "frame_file_path": "zOt2vMuYLx4-0/29/"
+    },
+    {
+        "mask_file_name": "mask.png",
+        "image_file_name": "crop.png",
+        "file_path": "bbox_batch_1/zOt2vMuYLx4-0/17/zOt2vMuYLx4-0-17-0/",
+        "frame_number": 17,
+        "frame_timestamp": 1681726017,
+        "video_id": 482,
+        "boxes": {
+            "x": 130,
+            "y": 502,
+            "w": 144,
+            "h": 181
+        },
+        "image_width": 900,
+        "image_height": 900,
+        "relative_boxes": {
+            "x": 130,
+            "y": 502,
+            "w": 144,
+            "h": 181
+        },
+        "cropped_width": 900,
+        "cropped_height": 900,
+        "frame_file_name": "zOt2vMuYLx4-0-17.png",
+        "frame_file_path": "zOt2vMuYLx4-0/17/"
+    },
+    {
+        "mask_file_name": "mask.png",
+        "image_file_name": "crop.png",
+        "file_path": "bbox_batch_1/zl6ckY2YM8c-2/7/zl6ckY2YM8c-2-7-1/",
+        "frame_number": 7,
+        "frame_timestamp": 1686731231,
+        "video_id": 736,
+        "boxes": {
+            "x": 287,
+            "y": 390,
+            "w": 127,
+            "h": 210
+        },
+        "image_width": 600,
+        "image_height": 600,
+        "relative_boxes": {
+            "x": 287,
+            "y": 390,
+            "w": 127,
+            "h": 210
+        },
+        "cropped_width": 600,
+        "cropped_height": 600,
+        "frame_file_name": "zl6ckY2YM8c-2-7.png",
+        "frame_file_path": "zl6ckY2YM8c-2/7/"
+    },
+    {
+        "mask_file_name": "mask.png",
+        "image_file_name": "crop.png",
+        "file_path": "bbox_batch_1/zl6ckY2YM8c-2/7/zl6ckY2YM8c-2-7-0/",
+        "frame_number": 7,
+        "frame_timestamp": 1686731231,
+        "video_id": 736,
+        "boxes": {
+            "x": 485,
+            "y": 434,
+            "w": 30,
+            "h": 40
+        },
+        "image_width": 600,
+        "image_height": 600,
+        "relative_boxes": {
+            "x": 485,
+            "y": 434,
+            "w": 30,
+            "h": 40
+        },
+        "cropped_width": 600,
+        "cropped_height": 600,
+        "frame_file_name": "zl6ckY2YM8c-2-7.png",
+        "frame_file_path": "zl6ckY2YM8c-2/7/"
+    },
+    {
+        "mask_file_name": "mask.png",
+        "image_file_name": "crop.png",
+        "file_path": "bbox_batch_1/zl6ckY2YM8c-2/28/zl6ckY2YM8c-2-28-1/",
+        "frame_number": 28,
+        "frame_timestamp": 1686731231,
+        "video_id": 736,
+        "boxes": {
+            "x": 573,
+            "y": 0,
+            "w": 27,
+            "h": 32
+        },
+        "image_width": 600,
+        "image_height": 600,
+        "relative_boxes": {
+            "x": 573,
+            "y": 0,
+            "w": 27,
+            "h": 32
+        },
+        "cropped_width": 600,
+        "cropped_height": 600,
+        "frame_file_name": "zl6ckY2YM8c-2-28.png",
+        "frame_file_path": "zl6ckY2YM8c-2/28/"
+    },
+    {
+        "mask_file_name": "mask.png",
+        "image_file_name": "crop.png",
+        "file_path": "bbox_batch_1/zl6ckY2YM8c-2/28/zl6ckY2YM8c-2-28-0/",
+        "frame_number": 28,
+        "frame_timestamp": 1686731231,
+        "video_id": 736,
+        "boxes": {
+            "x": 335,
+            "y": 331,
+            "w": 40,
             "h": 29
         },
-        "cropped_width": 512,
-        "cropped_height": 512
-    },
-    {
-        "mask_file_name": "mask.png",
-        "image_file_name": "crop.png",
-        "file_path": "bbox_batch_1/S1Juid0Wi8M-3/6/S1Juid0Wi8M-3-6-0/",
-        "frame_number": 6,
-        "frame_timestamp": 1687199436,
-        "video_id": 78,
+        "image_width": 600,
+        "image_height": 600,
         "relative_boxes": {
-            "x": 248,
-            "y": 301,
-            "w": 16,
-            "h": 11
+            "x": 335,
+            "y": 331,
+            "w": 40,
+            "h": 29
         },
-        "cropped_width": 512,
-        "cropped_height": 512
-    },
-    {
-        "mask_file_name": "mask.png",
-        "image_file_name": "crop.png",
-        "file_path": "bbox_batch_1/S1Juid0Wi8M-3/6/S1Juid0Wi8M-3-6-1/",
-        "frame_number": 6,
-        "frame_timestamp": 1687199436,
-        "video_id": 78,
-        "relative_boxes": {
-            "x": 258,
-            "y": 283,
-            "w": 44,
-            "h": 38
-        },
-        "cropped_width": 512,
-        "cropped_height": 512
-    },
-    {
-        "mask_file_name": "mask.png",
-        "image_file_name": "crop.png",
-        "file_path": "bbox_batch_1/S1Juid0Wi8M-3/14/S1Juid0Wi8M-3-14-0/",
-        "frame_number": 14,
-        "frame_timestamp": 1687199436,
-        "video_id": 78,
-        "relative_boxes": {
-            "x": 272,
-            "y": 157,
-            "w": 219,
-            "h": 198
-        },
-        "cropped_width": 512,
-        "cropped_height": 512
-    },
-    {
-        "mask_file_name": "mask.png",
-        "image_file_name": "crop.png",
-        "file_path": "bbox_batch_1/_XCMSfdJdj4-1/19/_XCMSfdJdj4-1-19-0/",
-        "frame_number": 19,
-        "frame_timestamp": 1686149451,
-        "video_id": 671,
-        "relative_boxes": {
-            "x": 199,
-            "y": 0,
-            "w": 115,
-            "h": 106
-        },
-        "cropped_width": 512,
-        "cropped_height": 512
-    },
-    {
-        "mask_file_name": "mask.png",
-        "image_file_name": "crop.png",
-        "file_path": "bbox_batch_1/_XCMSfdJdj4-1/5/_XCMSfdJdj4-1-5-0/",
-        "frame_number": 5,
-        "frame_timestamp": 1686149451,
-        "video_id": 671,
-        "relative_boxes": {
-            "x": 113,
-            "y": 0,
-            "w": 287,
-            "h": 183
-        },
-        "cropped_width": 512,
-        "cropped_height": 512
-    },
-    {
-        "mask_file_name": "mask.png",
-        "image_file_name": "crop.png",
-        "file_path": "bbox_batch_1/_XCMSfdJdj4-1/14/_XCMSfdJdj4-1-14-0/",
-        "frame_number": 14,
-        "frame_timestamp": 1686149451,
-        "video_id": 671,
-        "relative_boxes": {
-            "x": 45,
-            "y": 0,
-            "w": 467,
-            "h": 106
-        },
-        "cropped_width": 512,
-        "cropped_height": 512
+        "cropped_width": 600,
+        "cropped_height": 600,
+        "frame_file_name": "zl6ckY2YM8c-2-28.png",
+        "frame_file_path": "zl6ckY2YM8c-2/28/"
     }
 ]
