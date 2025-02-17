@@ -106,7 +106,7 @@ if __name__ == "__main__":
     num_elements = opt.num_elements
     total_samples = 0 # the number of boxes
     total_num_frames = 0 # the number of frames
-    debug = True # the flag for debugging
+    debug = False # the flag for debugging
     video_metadata = load_json(opt.video_metadata)
     video_names = ["_1jFnujWn50-0", "zl6ckY2YM8c-2", "zOt2vMuYLx4-0"]
     video_lookup = {v["file_name"]: v for v in video_metadata}
