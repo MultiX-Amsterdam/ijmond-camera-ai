@@ -10,7 +10,7 @@ The "bbox_batch_1" folder should contain the output after running the `sample_ma
 
 Usage:
 python get_all_metadata.py --root_folder bbox_batch_example --output_file combined_metadata.json
-python get_all_metadata.py --root_folder bbox_batch_1 --output_file segmentation_dataset_1.json
+python get_all_metadata.py --root_folder bbox_batch_2 --output_file segmentation_dataset_1.json
 """
 
 import os

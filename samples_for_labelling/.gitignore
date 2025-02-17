@@ -17,4 +17,5 @@ bbox_reduced
 bbox_extra
 bbox_new
 bbox_batch_1
+bbox_batch_2
 segmentation_dataset_1.json
