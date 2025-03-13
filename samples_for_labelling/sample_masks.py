@@ -41,6 +41,7 @@ def labels_selection(selected_frames, mask_folder_fullpath, input_folder_fullpat
     """
     num_sum_images = 0
     for file in selected_frames:
+        # Note that the frame number starts from 1
         frame_num = int(file.split(".")[0].split("_")[-1])
         image_rgb = cv2.imread(os.path.join(input_folder_fullpath, vid, file.split(".")[0] + ".jpg"))
         sub_images, sub_images_with_bbox, bbox, sub_masks = create_sub_images(
