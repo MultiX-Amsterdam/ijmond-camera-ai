@@ -1,5 +1,6 @@
-import pandas as pd
 import json
+import os
+import requests
 
 
 def load_bbox(fname):
@@ -9,7 +10,7 @@ def load_bbox(fname):
 
 
 def build_video_url(record):
-    """Build the video URL from record data"""
+    """Build the video URL from record data."""
     camera_names = ["hoogovens", "kooksfabriek_1", "kooksfabriek_2"]
     video = record["video"]
     url_root = record["url_root"]
@@ -22,7 +23,7 @@ def build_video_url(record):
 
 
 def build_image_url(record):
-    """Build the image URL from record data"""
+    """Build the image URL from record data."""
     url_root = record["url_root"]
     file_path = record["file_path"]
     image_file_name = record["image_file_name"]
@@ -37,11 +38,38 @@ def build_image_url(record):
     return original_url, bbox_url
 
 
+def download_all_images(data, folder):
+    """Download all original image URLs to the specified folder, naming by record id. Skip if file exists."""
+    if not os.path.exists(folder):
+        os.makedirs(folder)
+    for idx, record in enumerate(data['data']):
+        image_url, _ = build_image_url(record)
+        record_id = record.get('id')
+        ext = os.path.splitext(record['image_file_name'])[1]
+        image_file_name = f"{record_id}{ext}"
+        save_path = os.path.join(folder, image_file_name)
+        if os.path.exists(save_path):
+            print(f"Skipping {image_file_name} (already exists)")
+            continue
+        try:
+            response = requests.get(image_url, timeout=10)
+            response.raise_for_status()
+            with open(save_path, 'wb') as f:
+                f.write(response.content)
+            print(f"Downloaded {image_file_name} ({idx+1}/{len(data['data'])})")
+        except Exception as e:
+            print(f"Failed to download {image_url}: {e}")
+
+
 if __name__ == "__main__":
-    data = load_bbox("dataset/segmentation_labels_26_may_2025.json")
+    data = load_bbox("bbox_labels_26_may_2025.json")
+
+    # Example: Download all original images to the "img" folder
+    download_all_images(data, "img")
 
     # Print the last record in pretty format
     last_record = data['data'][-1]
+    print("="*50)
     print("Last record (pretty format):")
     print(json.dumps(last_record, indent=2))
 

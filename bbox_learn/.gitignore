@@ -1,1 +1,4 @@
-dataset/*.json
+dataset/ijmond_bbox/*.json
+dataset/ijmond_bbox/img/*
+dataset/ijmond_seg/*
+dataset/smoke5k/*
