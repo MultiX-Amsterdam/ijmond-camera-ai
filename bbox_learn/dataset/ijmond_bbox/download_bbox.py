@@ -1,6 +1,7 @@
 import json
 import os
 import requests
+from collections import Counter
 
 
 def load_bbox(fname):
@@ -84,16 +85,28 @@ if __name__ == "__main__":
     print(f"AI-Generated Bounding Box Image URL: {bbox_image_url}")
 
     # Get unique label_state_admin and label_state values
-    label_state_admin_values = set()
-    label_state_values = set()
+    label_state_admin_values = []
+    label_state_values = []
 
     for record in data['data']:
-        label_state_admin_values.add(record.get('label_state_admin'))
-        label_state_values.add(record.get('label_state'))
+        label_state_admin_values.append(record.get('label_state_admin'))
+        label_state_values.append(record.get('label_state'))
 
     print("\n" + "="*50)
     print("Unique label_state_admin values:")
-    print(sorted(label_state_admin_values))
+    print(sorted(set(label_state_admin_values)))
+
+    # Print distribution of label_state_admin values with counts
+    print("\nlabel_state_admin value distribution:")
+    label_state_admin_counter = Counter(label_state_admin_values)
+    for label, count in label_state_admin_counter.items():
+        print(f"{label}: {count}")
 
     print("\nUnique label_state values:")
-    print(sorted(label_state_values))
+    print(sorted(set(label_state_values)))
+
+    # Print distribution of label_state values with counts
+    print("\nlabel_state value distribution:")
+    label_state_counter = Counter(label_state_values)
+    for label, count in label_state_counter.items():
+        print(f"{label}: {count}")
