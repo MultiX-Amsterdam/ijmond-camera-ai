@@ -24,27 +24,31 @@ def is_file_here(file_path):
     return os.path.isfile(file_path)
 
 
-def convert_images_to_npy(input_dir, output_dir):
-    """Convert all jpg/png images in input_dir to .npy files in output_dir. Skip if .npy file exists."""
-    if not os.path.exists(output_dir):
+def convert_images_to_npy(image_path, npy_path):
+    """Convert a single jpg/png image to .npy file. Create output directory if needed."""
+    output_dir = os.path.dirname(npy_path)
+    if output_dir and not os.path.exists(output_dir):
         os.makedirs(output_dir)
-    for fname in os.listdir(input_dir):
-        if fname.lower().endswith((".jpg", ".jpeg", ".png")):
-            img_path = os.path.join(input_dir, fname)
-            npy_name = os.path.splitext(fname)[0] + ".npy"
-            npy_path = os.path.join(output_dir, npy_name)
-            if os.path.exists(npy_path):
-                print(f"Skipping {npy_name} (already exists)")
-                continue
-            img = Image.open(img_path).convert("RGB")
-            arr = np.array(img)
-            np.save(npy_path, arr)
-            print(f"Converted {fname} to {npy_name}")
+    if os.path.exists(npy_path):
+        print(f"Skipping {npy_path} (already exists)")
+        return
+    img = Image.open(image_path).convert("RGB")
+    arr = np.array(img)
+    np.save(npy_path, arr)
+    print(f"Converted {os.path.basename(image_path)} to {os.path.basename(npy_path)}")
 
 
 def draw_bbox_on_image(image_path, save_path, bboxes, color=(255, 0, 0), width=2):
-    """Draw a list of bounding boxes on the image and save to a file. If h_image/w_image do not match, resize first. Create save directory if needed.
-    Each bbox can have a 'color' field, otherwise the default color is used."""
+    """
+    Draw a list of bounding boxes on the image and save to a file.
+    If h_image/w_image do not match, resize first.
+    Create save directory if needed.
+    Each bbox can have a 'color' field, otherwise the default color is used.
+    Do nothing if save_path already exists.
+    """
+    if os.path.exists(save_path):
+        print(f"Skipping {save_path} (already exists)")
+        return
     if not bboxes:
         raise ValueError("bboxes list is empty")
     img = Image.open(image_path).convert("RGB")

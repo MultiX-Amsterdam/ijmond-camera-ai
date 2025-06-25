@@ -26,7 +26,7 @@ class IjmondBboxDataset(Dataset):
     def __getitem__(self, idx):
         v = self.metadata[idx]
 
-        file_path = os.path.join(self.root_dir, v["id"] + ".npy")
+        file_path = os.path.join(self.root_dir, f"{v["id"]}.npy")
         if not is_file_here(file_path):
             raise ValueError("Cannot find file: %s" % (file_path))
         img = np.load(file_path).astype(np.uint8)
@@ -35,4 +35,14 @@ class IjmondBboxDataset(Dataset):
         if self.transform:
             img = self.transform(img)
 
-        return {"img": img, "bbox": bbox}
+        return {"img": img, "bbox": v["bbox"]}
+
+
+if __name__ == "__main__":
+    metadata_path = "dataset/ijmond_bbox/filtered_bbox_labels_26_may_2025.json"
+    root_dir = "dataset/ijmond_bbox/img_npy/"
+    dataset = IjmondBboxDataset(metadata_path=metadata_path, root_dir=root_dir)
+    print(f"Dataset size: {len(dataset)}")
+    sample = dataset[5]
+    print(f"Sample img shape: {sample['img'].shape}")
+    print(f"Sample bbox: {sample['bbox']}")
