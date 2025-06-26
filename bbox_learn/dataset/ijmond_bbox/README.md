@@ -72,24 +72,24 @@ Notice that values in the `h_bbox`, `w_bbox`, `x_bbox`, and `y_bbox` fields are 
 - 0 : One person checked the box; the box is good (or there was no box, and the person agrees)
 - 1 : One person checked the box; the person edited the box
 - 2 : One person checked the box; the person removed the box due to no smoke (or there was no box, and the person added a box due to smoke)
-- 3 : Two people checked the box; they agree that the box is good
-- 4 : Two people checked the box; they both edited the box
-- 5 : Two people checked the box; they both removed the box
+- 3 : Two people checked the box; they agree that the box is good (terminal state, no need for more feedback)
+- 4 : Two people checked the box; they both edited the box (terminal state, no need for more feedback)
+- 5 : Two people checked the box; they both removed the box (terminal state, no need for more feedback)
 - 6 : Two people checked the box; they give state 0 and 1
 - 7 : Two people checked the box; they give state 0 and 2
 - 8 : Two people checked the box; they give state 1 and 2
-- 9 : Three people checked the box; they give state 0, 1, and 0
-- 10 : Three people checked the box; they give state 0, 1, and 1
-- 11 : Three people checked the box; they give state 0, 2, and 0
-- 12 : Three people checked the box; they give state 0, 2, and 2
-- 13 : Three people checked the box; they give state 1, 2, and 1
-- 14 : Three people checked the box; they give state 1, 2, and 2
-- 15 : Three people checked the box; they give state 0, 1, and 2
-- 16 : Gold standard; the box is good
-- 17 : Gold standard; the box needs editing
-- 18 : Gold standard; the box should be removed
-- -1 : No data; no feedback from people
-- -2 : Discarded data, by researchers
+- 9 : Three people checked the box; they give state 0, 1, and 0 (terminal state, probably a good box)
+- 10 : Three people checked the box; they give state 0, 1, and 1 (terminal state, probably a box that need editing)
+- 11 : Three people checked the box; they give state 0, 2, and 0 (terminal state, probably a good box)
+- 12 : Three people checked the box; they give state 0, 2, and 2 (terminal state, probably does not have smoke)
+- 13 : Three people checked the box; they give state 1, 2, and 1 (terminal state, probably a box that need editing)
+- 14 : Three people checked the box; they give state 1, 2, and 2 (terminal state, probably does not have smoke)
+- 15 : Three people checked the box; they give state 0, 1, and 2 (terminal state, probably a box that need editing)
+- 16 : Gold standard; the box is good (terminal state)
+- 17 : Gold standard; the box needs editing (terminal state)
+- 18 : Gold standard; the box should be removed (terminal state)
+- -1 : No data; no feedback from people (initial state)
+- -2 : Discarded data, by researchers (terminal state)
 
 Below is the python code that you can use to construct the URL for the video and image. Notice that the bounding box URL below shows the box that was created by [a Computer Vision model](https://github.com/MultiX-Amsterdam/ijmond-camera-ai/tree/main/bvm_training).
 ```python
