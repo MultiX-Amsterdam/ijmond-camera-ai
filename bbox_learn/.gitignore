@@ -4,3 +4,4 @@ dataset/ijmond_bbox/img_npy/*
 dataset/ijmond_bbox/debug/*
 dataset/ijmond_seg/*
 dataset/smoke5k/*
+debug*
