@@ -1,6 +1,10 @@
+"""
+This script downloads images from a JSON file containing bounding box labels.
+"""
 import json
 import os
 import requests
+import sys
 from collections import Counter
 
 
@@ -63,7 +67,18 @@ def download_all_images(data, folder):
 
 
 if __name__ == "__main__":
-    data = load_bbox("bbox_labels_26_may_2025.json")
+    if len(sys.argv) != 2:
+        print("Usage: python download_bbox.py <bbox_labels_file.json>")
+        print("Example: python download_bbox.py bbox_labels_4_july_2025.json")
+        sys.exit(1)
+
+    bbox_file = sys.argv[1]
+
+    if not os.path.exists(bbox_file):
+        print(f"Error: File '{bbox_file}' not found.")
+        sys.exit(1)
+
+    data = load_bbox(bbox_file)
 
     # Example: Download all original images to the "img" folder
     download_all_images(data, "img")

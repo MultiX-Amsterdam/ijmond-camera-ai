@@ -1,4 +1,5 @@
 import os
+import sys
 import torch
 from torch.utils.data import Dataset
 from torchvision import tv_tensors
@@ -40,31 +41,55 @@ class IjmondBboxDataset(Dataset):
 
         # Load bounding boxes and convert to xyxy format
         b = v["bbox"]
-        boxes = [[b["x_bbox"], b["y_bbox"], b["w_bbox"], b["h_bbox"]]]
-        boxes = tv_tensors.BoundingBoxes(
-            boxes,
-            format="XYWH",
-            canvas_size=(b["h_image"], b["w_image"])
-        )
-        xxwh_to_xyxy = v2.ConvertBoundingBoxFormat("XYXY")
-        boxes = xxwh_to_xyxy(boxes)
+        if b == -1:
+            boxes = None  # No bounding boxes available
+        else:
+            boxes = [[b["x_bbox"], b["y_bbox"], b["w_bbox"], b["h_bbox"]]]
+            boxes = tv_tensors.BoundingBoxes(
+                boxes,
+                format="XYWH",
+                canvas_size=(b["h_image"], b["w_image"])
+            )
+            xxwh_to_xyxy = v2.ConvertBoundingBoxFormat("XYXY")
+            boxes = xxwh_to_xyxy(boxes)
 
         # Transform image
         if self.transform:
-            img, boxes = self.transform(img, boxes)
+            if boxes is None:
+                img = self.transform(img)
+            else:
+                img, boxes = self.transform(img, boxes)
 
         return {"img": img, "boxes": boxes}
 
 
 if __name__ == "__main__":
-    metadata_path = "dataset/ijmond_bbox/filtered_bbox_labels_26_may_2025.json"
-    root_dir = "dataset/ijmond_bbox/img_npy/"
+    if len(sys.argv) != 3:
+        print("Usage: python ijmond_bbox_dataset.py <metadata_path> <root_dir>")
+        print("Example: python ijmond_bbox_dataset.py dataset/ijmond_bbox/filtered_bbox_labels_4_july_2025.json dataset/ijmond_bbox/img_npy/")
+        sys.exit(1)
+
+    metadata_path = sys.argv[1]
+    root_dir = sys.argv[2]
+
+    if not os.path.exists(metadata_path):
+        print(f"Error: Metadata file '{metadata_path}' not found.")
+        sys.exit(1)
+
+    if not os.path.exists(root_dir):
+        print(f"Error: Root directory '{root_dir}' not found.")
+        sys.exit(1)
+
     D = IjmondBboxDataset(metadata_path=metadata_path, root_dir=root_dir)
     print(f"Dataset size: {len(D)}")
-    s = D[5]
-    print(f"Sample img shape: {s['img'].shape}")
-    print(f"Sample img values: {s['img'][0, 0:5, 0:5]}")
-    print(f"Sample bbox: {s['boxes']}")
+    s = None
+    for d in D:
+        if d['boxes'] is not None:
+            print(f"Sample img shape: {d['img'].shape}")
+            print(f"Sample img values: {d['img'][0, 0:5, 0:5]}")
+            print(f"Sample bbox: {d['boxes']}")
+            s = d
+            break
 
     transforms = v2.Compose([
         v2.RandomHorizontalFlip(p=0.5),
@@ -74,8 +99,10 @@ if __name__ == "__main__":
     ])
 
     DT = IjmondBboxDataset(metadata_path=metadata_path, root_dir=root_dir, transform=transforms)
-    st = DT[5]
-    print(f"Sample img shape after transform: {st['img'].shape}")
-    print(f"Sample img values after transform: {st['img'][0, 0:5, 0:5]}")
-    print(f"Sample bbox after transform: {st['boxes']}")
-    plot([(s['img'], s['boxes']), (st['img'], st['boxes'])], "debug_plot.png")
+    for st in DT:
+        if st['boxes'] is not None:
+            print(f"Sample img shape after transform: {st['img'].shape}")
+            print(f"Sample img values after transform: {st['img'][0, 0:5, 0:5]}")
+            print(f"Sample bbox after transform: {st['boxes']}")
+            plot([(s['img'], s['boxes']), (st['img'], st['boxes'])], "debug_plot.png")
+            break

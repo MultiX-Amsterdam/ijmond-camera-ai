@@ -4,6 +4,8 @@ This script does the following:
 - Compute the final bounding box.
 - Save the image as .npy format.
 """
+import sys
+import os
 from util.util import (
     load_json,
     save_json,
@@ -11,6 +13,7 @@ from util.util import (
     convert_images_to_npy
 )
 from collections import defaultdict
+import copy
 
 
 def filter_by_label(metadata):
@@ -23,7 +26,9 @@ def filter_by_label(metadata):
                 "id": v["id"],
                 "state": state,
                 "bbox": bbox,
-                "debug_bbox_list": debug_bbox_list
+                "debug_bbox_list": debug_bbox_list,
+                "frame_number": v["frame_number"],
+                "video_id": v["video"]["id"],
             }
             filtered_metadata.append(d)
     return filtered_metadata
@@ -41,7 +46,7 @@ def compute_box(v):
         "h_bbox": v["h_bbox"],
         "h_image": h,
         "w_image": w,
-        "color": (0, 0, 255)
+        "color": (0, 0, 255, 0.5)
     }
 
     # Computer the final bounding box based on the label state
@@ -50,7 +55,9 @@ def compute_box(v):
     if label_state_admin in [16, 17, 18]:
         if label_state_admin == 16:
             # This means the box is good, so we use the AI-generated box
-            return ai_bbox, label_state_admin, None
+            b = copy.deepcopy(ai_bbox)
+            b["color"] = (255, 0, 0, 0.5)  # Change color to red for good boxes
+            return b, label_state_admin, [ai_bbox]
         elif label_state_admin == 17:
             # This means that the box needs editing, so we use the adjusted box with the latest timestamp
             adjusted_bbox_list = v["feedback_filtered"]
@@ -97,7 +104,7 @@ def compute_box(v):
                 "h_bbox": boxes[0]["h_bbox"],
                 "h_image": h,
                 "w_image": w,
-                "color": (0, 255, 0)
+                "color": (0, 255, 0, 0.5)
             }
             bbox1 = {
                 "x_bbox": boxes[1]["x_bbox"],
@@ -106,14 +113,14 @@ def compute_box(v):
                 "h_bbox": boxes[1]["h_bbox"],
                 "h_image": h,
                 "w_image": w,
-                "color": (0, 255, 0)
+                "color": (0, 255, 0, 0.5)
             }
-            bbox = intersection(bbox0, bbox1)
+            bbox, iou = intersection(bbox0, bbox1)
             if bbox is None:
                 return None, None, None
             if label_state == 10:
                 # If label_state is 10, we need to compute the intersection with the AI-generated box
-                bbox = intersection(bbox, ai_bbox)
+                bbox, iou = intersection(bbox, ai_bbox)
                 if bbox is None:
                     return None, None, None
             return bbox, label_state, [bbox0, bbox1, ai_bbox]
@@ -134,9 +141,9 @@ def compute_box(v):
                 "h_bbox": box["h_bbox"],
                 "h_image": h,
                 "w_image": w,
-                "color": (0, 255, 0)
+                "color": (0, 255, 0, 0.5)
             }
-            bbox = intersection(bbox0, ai_bbox)
+            bbox, iou = intersection(bbox0, ai_bbox)
             if bbox is None:
                 return None, None, None
             return bbox, label_state, [bbox0, ai_bbox]
@@ -145,7 +152,9 @@ def compute_box(v):
             # State 11 means: three people checked the box; they give state 0, 2, and 0
             # State 9 means: three people checked the box; they give state 0, 1, and 0
             # In this case, we use the AI-generated box
-            return ai_bbox, label_state, None
+            b = copy.deepcopy(ai_bbox)
+            b["color"] = (255, 0, 0, 0.5)  # Change color to red for good boxes
+            return b, label_state, [ai_bbox]
         elif label_state in [5, 12, 14]:
             # This means that the box should be removed
             # We use these as negative examples to train the model
@@ -163,16 +172,17 @@ def intersection(bbox0, bbox1, pixel_threshold=10, iou_threshold=0.5):
     y2 = min(bbox0["y_bbox"] + bbox0["h_bbox"], bbox1["y_bbox"] + bbox1["h_bbox"])
     w = x2 - x1
     h = y2 - y1
-    # We do not want to return a box that is too small
-    if w <= pixel_threshold or h <= pixel_threshold:
-        return None
     # We do not want a box that with an IoU that is too small
     area0 = bbox0["w_bbox"] * bbox0["h_bbox"]
     area1 = bbox1["w_bbox"] * bbox1["h_bbox"]
     intersection_area = w * h
     union_area = area0 + area1 - intersection_area
-    if union_area == 0 or (intersection_area / union_area) < iou_threshold:
-        return None
+    iou = intersection_area / union_area
+    # We do not want to return a box that is too small
+    if w <= pixel_threshold or h <= pixel_threshold:
+        return None, iou
+    if union_area == 0 or iou < iou_threshold:
+        return None, iou
     return {
         "x_bbox": x1,
         "y_bbox": y1,
@@ -180,11 +190,75 @@ def intersection(bbox0, bbox1, pixel_threshold=10, iou_threshold=0.5):
         "h_bbox": h,
         "h_image": bbox0["h_image"],
         "w_image": bbox0["w_image"]
-    }
+    }, iou
+
+
+def get_intersection_boxes(boxes, iou_thresh=0.5):
+    """
+    Combine boxes using a non-maximum suppression style
+    , but all the boxes has the same confidence score
+    , and we need to take the overlapping region that exceed a certain iou threshold.
+    """
+    used = set()
+    intersections = []
+
+    for i, box1 in enumerate(boxes):
+        if i in used:
+            continue
+        group = [box1]
+        used.add(i)
+        for j, box2 in enumerate(boxes):
+            if j in used:
+                continue
+            _, iou = intersection(box1, box2)
+            if iou >= iou_thresh:
+                group.append(box2)
+                used.add(j)
+        if len(group) > 1:
+            # Compute intersection over all boxes in the group
+            x1 = max(b["x_bbox"] for b in group)
+            y1 = max(b["y_bbox"] for b in group)
+            x2 = min(b["x_bbox"] + b["w_bbox"] for b in group)
+            y2 = min(b["y_bbox"] + b["h_bbox"] for b in group)
+            w = x2 - x1
+            h = y2 - y1
+            if w > 0 and h > 0:
+                intersections.append({
+                    "x_bbox": x1,
+                    "y_bbox": y1,
+                    "w_bbox": w,
+                    "h_bbox": h,
+                    "h_image": box1["h_image"],
+                    "w_image": box1["w_image"]
+                })
+        else:
+            # We want to keep the single box with no overlap
+            intersections.append(box1)
+
+    if len(intersections) == 0:
+        intersections = None
+
+    return intersections
 
 
 if __name__ == "__main__":
-    metadata_path = "dataset/ijmond_bbox/bbox_labels_26_may_2025.json"
+    if len(sys.argv) != 3:
+        print("Usage: python filter_aggr_bbox.py <input_metadata_path> <output_metadata_path>")
+        print("Example: python filter_aggr_bbox.py dataset/ijmond_bbox/bbox_labels_4_july_2025.json dataset/ijmond_bbox/filtered_bbox_labels_4_july_2025.json")
+        sys.exit(1)
+
+    metadata_path = sys.argv[1]
+    filtered_metadata_path = sys.argv[2]
+
+    if not os.path.exists(metadata_path):
+        print(f"Error: Input file '{metadata_path}' not found.")
+        sys.exit(1)
+
+    # Create output directory if it doesn't exist
+    output_dir = os.path.dirname(filtered_metadata_path)
+    if output_dir and not os.path.exists(output_dir):
+        os.makedirs(output_dir)
+
     metadata = load_json(metadata_path)["data"]
     print("Before filtering...")
     print("Number of metadata entries:", len(metadata))
@@ -197,12 +271,106 @@ if __name__ == "__main__":
     print("Number of metadata entries:", len(filtered_metadata))
     print(filtered_metadata[0])
 
+    # Merge bounding boxes that come from the same image
+    # , which means with the same frame_number and video_id
+    print("=" * 50)
+    print("Merging bounding boxes that come from the same image...")
+    # We need to group the metadata by frame_number and video_id
+    grouped_metadata = defaultdict(list)
+    for record in filtered_metadata:
+        key = (record["frame_number"], record["video_id"])
+        grouped_metadata[key].append(record)
+    print("Number of groups (i.e., unique images):", len(grouped_metadata))
+    # Index the grouped metadata by the size of each group
+    grouped_metadata_by_size = defaultdict(list)
+    for key, records in grouped_metadata.items():
+        grouped_metadata_by_size[len(records)].append((key, records))
+    # Print the number of records and state distribution in each group size
+    print("Grouped metadata by size:")
+    for size, records in grouped_metadata_by_size.items():
+        print(f"Size {size}: {len(records)} groups")
+        state_set = set()
+        for key, group in records:
+            for record in group:
+                state_set.add(record["state"])
+        print(f"Unique states: {state_set}")
+
+    # Now we merge the bounding boxes for each group
+    print("=" * 50)
+    merged_metadata = []
+    for key, records in grouped_metadata.items():
+        merged_bbox = {
+            "id": records[0]["id"],
+            "frame_number": records[0]["frame_number"],
+            "video_id": records[0]["video_id"],
+            "state": [],
+            "bbox": None,
+            "debug_bbox_list": []
+        }
+        # Merge the bounding boxes
+        for record in records:
+            merged_bbox["state"].append(record["state"])
+            # If the bounding box is -1, we skip it
+            if record["bbox"] != -1:
+                if merged_bbox["bbox"] is None:
+                    merged_bbox["bbox"] = [record["bbox"]]
+                else:
+                    merged_bbox["bbox"].append(record["bbox"])
+            # Add the debug bounding boxes
+            if record["debug_bbox_list"]:
+                merged_bbox["debug_bbox_list"].extend(record["debug_bbox_list"])
+        merged_metadata.append(merged_bbox)
+    print("After merging bounding boxes...")
+    print("Number of metadata entries:", len(merged_metadata))
+
+    # Now we compute the final bounding box for each merged record
+    print("=" * 50)
+    filtered_metadata_merged = []
+    for record in merged_metadata:
+        if record["bbox"] is None:
+            # If there is no bounding box, we just add the record
+            filtered_metadata_merged.append(record)
+        elif len(record["bbox"]) == 1:
+            # If there is only one bounding box, we can just keep it
+            filtered_metadata_merged.append({
+                "id": record["id"],
+                "state": record["state"],
+                "bbox": record["bbox"],
+                "debug_bbox_list": record["debug_bbox_list"],
+                "frame_number": record["frame_number"],
+                "video_id": record["video_id"]
+            })
+        else:
+            # Otherwise, compute the final bounding box
+            final_bbox_list = get_intersection_boxes(record["bbox"])
+            if final_bbox_list is None:
+                # If there is no intersection, we just add the record with an empty bbox
+                filtered_metadata_merged.append({
+                    "id": record["id"],
+                    "state": record["state"],
+                    "bbox": None,
+                    "debug_bbox_list": record["debug_bbox_list"],
+                    "frame_number": record["frame_number"],
+                    "video_id": record["video_id"]
+                })
+            else:
+                filtered_metadata_merged.append({
+                    "id": record["id"],
+                    "state": record["state"],
+                    "bbox": final_bbox_list,
+                    "debug_bbox_list": record["debug_bbox_list"],
+                    "frame_number": record["frame_number"],
+                    "video_id": record["video_id"]
+                })
+    print("After computing the final bounding boxes...")
+    print("Number of metadata entries:", len(filtered_metadata_merged))
+    print(filtered_metadata_merged[0])
+
     # Save the filtered metadata
     print("=" * 50)
-    filtered_metadata_path = "dataset/ijmond_bbox/filtered_bbox_labels_26_may_2025.json"
     filtered_metadata_copy = []
     # Only keep the "id" and "bbox" fields
-    for record in filtered_metadata:
+    for record in filtered_metadata_merged:
         filtered_record = {
             "id": record["id"],
             "bbox": record["bbox"]
@@ -211,12 +379,13 @@ if __name__ == "__main__":
     save_json(filtered_metadata_copy, filtered_metadata_path)
     print(f"Filtered metadata saved to {filtered_metadata_path}.")
 
-    # Index the filtered metadata by id and group by state
+    # Index the filtered metadata by id and group by state combinations
     print("=" * 50)
     filtered_metadata_by_state = defaultdict(list)
-    for record in filtered_metadata:
-        filtered_metadata_by_state[record["state"]].append(record)
+    for record in filtered_metadata_merged:
+        filtered_metadata_by_state["-".join(str(x) for x in sorted(record["state"]))].append(record)
     filtered_metadata_by_state = dict(filtered_metadata_by_state)
+    print(filtered_metadata_by_state.keys())
 
     # For each box, get the image and overlay the bounding box
     # Also convert the image to .npy format and save it
@@ -232,10 +401,8 @@ if __name__ == "__main__":
             if record["debug_bbox_list"]:
                 for debug_bbox in record["debug_bbox_list"]:
                     bbox_list.append(debug_bbox)
-            if record["bbox"] is not -1:
-                # -1 means the box should be removed, so we skip it, but we still need to keep the record
-                # Add the final bounding box
-                bbox_list.append(record["bbox"])
+            if record["bbox"] is not None:
+                bbox_list.extend(record["bbox"])
             draw_bbox_on_image(img_path, save_path, bbox_list)
             convert_images_to_npy(img_path, f"dataset/ijmond_bbox/img_npy/{img_id}.npy");
             print(f"Overlay saved to {save_path}")
@@ -244,11 +411,12 @@ if __name__ == "__main__":
     # , the records per state
     # , and the records for negative examples (state 5, 12, 14, and 18)
     print("=" * 50)
-    print("Total number of records after filtering:", len(filtered_metadata))
+    print("Total number of records after filtering:", len(filtered_metadata_merged))
     print("Number of records per state:")
     for state, records in filtered_metadata_by_state.items():
         print(f"State {state}: {len(records)} records")
-    print("Number of negative examples (state 5, 12, 14, and 18):")
-    negative_states = [5, 12, 14, 18]
-    negative_count = sum(len(records) for state, records in filtered_metadata_by_state.items() if state in negative_states)
-    print(f"Negative examples: {negative_count} records")
+
+    # Print the number of positive examples, which means the bbox field is not None
+    positive_examples = [r for r in filtered_metadata_merged if r["bbox"] is not None]
+    print("Number of positive examples:", len(positive_examples))
+    print("Number of negative examples:", len(filtered_metadata_merged) - len(positive_examples))
