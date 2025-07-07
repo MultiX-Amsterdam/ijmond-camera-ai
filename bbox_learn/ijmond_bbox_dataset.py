@@ -13,7 +13,7 @@ from util.helpers import plot
 
 
 class IjmondBboxDataset(Dataset):
-    def __init__(self, metadata_path=None, root_dir=None, transform=None):
+    def __init__(self, metadata_path, root_dir, transform=None):
         """
         metadata_path (string): the full path to the metadata json file (after running the "filter_aggr_bbox.py" script)
         root_dir (string): the root directory that stores images in .npy format
@@ -82,7 +82,7 @@ if __name__ == "__main__":
         print(f"Error: Root directory '{root_dir}' not found.")
         sys.exit(1)
 
-    D = IjmondBboxDataset(metadata_path=metadata_path, root_dir=root_dir)
+    D = IjmondBboxDataset(metadata_path, root_dir)
     print(f"Dataset size: {len(D)}")
     s = None
     for d in D:
@@ -100,11 +100,11 @@ if __name__ == "__main__":
         v2.Resize((400, 400), antialias=True)
     ])
 
-    DT = IjmondBboxDataset(metadata_path=metadata_path, root_dir=root_dir, transform=transforms)
+    DT = IjmondBboxDataset(metadata_path, root_dir, transform=transforms)
     for st in DT:
         if st['boxes'] is not None:
             print(f"Sample img shape after transform: {st['img'].shape}")
             print(f"Sample img values after transform: {st['img'][0, 0:5, 0:5]}")
             print(f"Sample bbox after transform: {st['boxes']}")
-            plot([(s['img'], s['boxes']), (st['img'], st['boxes'])], "debug_plot.png")
+            plot([(s['img'], s['boxes']), (st['img'], st['boxes'])], "debug_plot_ijmondbox.png")
             break
