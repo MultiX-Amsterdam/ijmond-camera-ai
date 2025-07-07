@@ -40,15 +40,17 @@ class IjmondBboxDataset(Dataset):
         img = img.permute(2, 0, 1)
 
         # Load bounding boxes and convert to xyxy format
-        b = v["bbox"]
-        if b == -1:
+        b_list = v["bbox"]
+        if b_list == None:
             boxes = None  # No bounding boxes available
         else:
-            boxes = [[b["x_bbox"], b["y_bbox"], b["w_bbox"], b["h_bbox"]]]
+            boxes = []
+            for b in b_list:
+                boxes.append([b["x_bbox"], b["y_bbox"], b["w_bbox"], b["h_bbox"]])
             boxes = tv_tensors.BoundingBoxes(
                 boxes,
                 format="XYWH",
-                canvas_size=(b["h_image"], b["w_image"])
+                canvas_size=(b_list[0]["h_image"], b_list[0]["w_image"])
             )
             xxwh_to_xyxy = v2.ConvertBoundingBoxFormat("XYXY")
             boxes = xxwh_to_xyxy(boxes)
@@ -93,8 +95,8 @@ if __name__ == "__main__":
 
     transforms = v2.Compose([
         v2.RandomHorizontalFlip(p=0.5),
+        v2.ColorJitter(brightness=0.3, contrast=0.3, saturation=0.3, hue=0.01),
         v2.ToDtype(torch.float32, scale=True),
-        v2.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
         v2.Resize((400, 400), antialias=True)
     ])
 

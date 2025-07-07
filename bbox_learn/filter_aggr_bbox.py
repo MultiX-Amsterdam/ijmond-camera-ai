@@ -193,14 +193,13 @@ def intersection(bbox0, bbox1, pixel_threshold=10, iou_threshold=0.5):
     }, iou
 
 
-def get_intersection_boxes(boxes, iou_thresh=0.5):
+def get_final_boxes(boxes):
     """
-    Combine boxes using a non-maximum suppression style
-    , but all the boxes has the same confidence score
-    , and we need to take the overlapping region that exceed a certain iou threshold.
+    If the boxes overlap, compute the union of the boxes.
+    If the boxes do not overlap, return the boxes as they are.
     """
     used = set()
-    intersections = []
+    box_merged = []
 
     for i, box1 in enumerate(boxes):
         if i in used:
@@ -211,19 +210,19 @@ def get_intersection_boxes(boxes, iou_thresh=0.5):
             if j in used:
                 continue
             _, iou = intersection(box1, box2)
-            if iou >= iou_thresh:
+            if iou >= 0:
                 group.append(box2)
                 used.add(j)
         if len(group) > 1:
-            # Compute intersection over all boxes in the group
-            x1 = max(b["x_bbox"] for b in group)
-            y1 = max(b["y_bbox"] for b in group)
-            x2 = min(b["x_bbox"] + b["w_bbox"] for b in group)
-            y2 = min(b["y_bbox"] + b["h_bbox"] for b in group)
+            # Compute union over all boxes in the group
+            x1 = min(b["x_bbox"] for b in group)
+            y1 = min(b["y_bbox"] for b in group)
+            x2 = max(b["x_bbox"] + b["w_bbox"] for b in group)
+            y2 = max(b["y_bbox"] + b["h_bbox"] for b in group)
             w = x2 - x1
             h = y2 - y1
             if w > 0 and h > 0:
-                intersections.append({
+                box_merged.append({
                     "x_bbox": x1,
                     "y_bbox": y1,
                     "w_bbox": w,
@@ -233,12 +232,12 @@ def get_intersection_boxes(boxes, iou_thresh=0.5):
                 })
         else:
             # We want to keep the single box with no overlap
-            intersections.append(box1)
+            box_merged.append(box1)
 
-    if len(intersections) == 0:
-        intersections = None
+    if len(box_merged) == 0:
+        box_merged = None
 
-    return intersections
+    return box_merged
 
 
 if __name__ == "__main__":
@@ -263,6 +262,8 @@ if __name__ == "__main__":
     print("Before filtering...")
     print("Number of metadata entries:", len(metadata))
     print(metadata[0])
+    print("Unique image widths:", set(v["w_image"] for v in metadata))
+    print("Unique image heights:", set(v["h_image"] for v in metadata))
 
     # Filter the metadata by label
     print("=" * 50)
@@ -342,9 +343,9 @@ if __name__ == "__main__":
             })
         else:
             # Otherwise, compute the final bounding box
-            final_bbox_list = get_intersection_boxes(record["bbox"])
+            final_bbox_list = get_final_boxes(record["bbox"])
             if final_bbox_list is None:
-                # If there is no intersection, we just add the record with an empty bbox
+                # If there is no final box, we just add the record with an empty bbox
                 filtered_metadata_merged.append({
                     "id": record["id"],
                     "state": record["state"],
