@@ -17,5 +17,6 @@ python ijmond_bbox_dataset.py dataset/ijmond_bbox/filtered_bbox_labels_4_july_20
 
 Prepare SMOKE5K for training:
 ```sh
-python smoke5k_image_to_npy.py
+cd bbox_learn/dataset/smoke5k
+python create_smoke5k_metadata_and_npy.py
 ```
