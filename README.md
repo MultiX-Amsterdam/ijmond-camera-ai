@@ -55,4 +55,22 @@ If the environment already exists and you want to remove it before installing pa
 ```sh
 conda deactivate
 conda env remove -n ijmond-camera-ai
+
+# <a name="install-nvidia"></a>Install NVIDIA drivers, CUDA, and PyTorch (administrator only)
+> WARNING: this section is only for system administrators, not developers.
+
 ```
+Next, install NVIDIA driver. Run the following to identify the GPU:
+```sh
+lspci | grep -i nvidia
+```
+Then, run the following to check the drivers:
+```sh
+ubuntu-drivers devices
+```
+Choose the recommended version (with the "distro non-free recommended" text) and run the following:
+```sh
+sudo apt-get install nvidia-driver-570
+```
+Replace `570` with the recommended version.
+Then, install `cuda` from [this page](https://docs.nvidia.com/cuda/cuda-installation-guide-linux/) and then install `pytorch` from the [official website](https://pytorch.org/).
