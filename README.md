@@ -55,11 +55,60 @@ If the environment already exists and you want to remove it before installing pa
 ```sh
 conda deactivate
 conda env remove -n ijmond-camera-ai
+```
 
 # <a name="install-nvidia"></a>Install NVIDIA drivers, CUDA, and PyTorch (administrator only)
 > WARNING: this section is only for system administrators, not developers.
 
+This installation guide assusmes that you are using the Ubuntu 22.04 server version (not desktop version) operating system.
+
+## Disable the nouveau driver
+
+Run the following on open the file (assuming that you use `vim` as the text editor):
+```sh
+sudo vim /etc/modprobe.d/blacklist.conf
 ```
+Then, add the following to the file to blacklist nouveau driver:
+```sh
+# Blacklist nouveau driver (for NVIDIA driver installation)
+blacklist nouveau
+blacklist lbm-nouveau
+options nouveau modeset=0
+alias nouveau off
+alias lbm-nouveau off
+```
+Next, regenerate the initial ram file system of the kernel and reboot the computer:
+```sh
+sudo update-initramfs -u
+sudo reboot now
+```
+Then, check if nouveau is disabled correctly using the following command. You should not see any outputs from the terminal.
+```sh
+lsmod | grep -i nouveau
+```
+
+## Remove old NVIDIA driver
+We need to remove old NVIDIA drivers before installing the new one. For drivers that are installed using the files that are downloaded from NVIDIA website, run the following:
+```sh
+# For drivers that are installed from NVIDIA website file, remove the driver using the following command:
+sudo nvidia-uninstall
+```
+For drivers that are installed using `sudo apt-get`, run the folloing:
+```sh
+# For drivers that are installed using sudo apt-get, , remove the driver using the following commands:
+sudo apt-get remove --purge '^nvidia-.*'
+sudo apt-get autoremove
+```
+After that, run the following to check if the drivers are removed. You should not see anything from the terminal.
+```sh
+lsmod | grep nvidia
+```
+Also, run the following, and it should tell you some kind of error message that it does not exist:
+```sh
+nvidia-smi
+```
+
+## Install new NVIDIA driver
 Next, install NVIDIA driver. Run the following to identify the GPU:
 ```sh
 lspci | grep -i nvidia
@@ -68,9 +117,38 @@ Then, run the following to check the drivers:
 ```sh
 ubuntu-drivers devices
 ```
-Choose the recommended version (with the "distro non-free recommended" text) and run the following:
+Identify the recommended version (with the "distro non-free recommended" text) and then check the [PyTorch website](https://pytorch.org/) about the supported CUDA versions.
+After that, check this [NVIDIA CUDA page] to see if the driver supports the intended CUDA version. If yes, run the following command to install the driver.
+Otherwise, pick another NVIDIA driver version or and older PyTorch version that works on older CUDA.
 ```sh
 sudo apt-get install nvidia-driver-570
 ```
-Replace `570` with the recommended version.
-Then, install `cuda` from [this page](https://docs.nvidia.com/cuda/cuda-installation-guide-linux/) and then install `pytorch` from the [official website](https://pytorch.org/).
+Replace `570` with the version that you want to install. After that, reboot the system and check if the driver is working:
+```sh
+sudo reboot now
+nvidia-smi
+```
+You should see something on the terminal, indicating the status of the GPU.
+Also, running the following should now show some installed drivers:
+```sh
+lsmod | grep nvidia
+```
+
+## Install PyTorch
+Then, install `pytorch` from the [official website](https://pytorch.org/).
+Make sure to choose the one with the CUDA version that works with the NVIDIA driver that you just installed.
+The `pip` installation version comes with CUDA, so you do not need to install CUDA separately.
+The command should look similar with the one below:
+```sh
+conda activate ijmond-camera-ai
+pip3 install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu128
+```
+After that, use the following to verify if PyTorch can use CUDA.
+```sh
+python -c "import torch; print(torch.cuda.is_available()); print(torch.cuda.get_device_name(0))"
+```
+You should see something like below on the terminal:
+```sh
+True
+NVIDIA GeForce RTX 3090
+```
