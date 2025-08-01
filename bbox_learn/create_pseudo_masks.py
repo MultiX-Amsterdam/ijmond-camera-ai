@@ -1,6 +1,7 @@
 """
 Create pseudo masks using SAM (Segment Anything Model) for the IJmond bounding boxes.
 """
+import sys
 import torch
 import numpy as np
 import os
@@ -150,8 +151,13 @@ def save_batch_masks(batch_masks, batch_idx, images, output_dir="dataset/ijmond_
 
 
 def main():
-    metadata_path = "dataset/ijmond_bbox/filtered_bbox_labels_4_july_2025.json"
-    root_dir = "dataset/ijmond_bbox/img_npy/"
+    if len(sys.argv) != 3:
+        print("Usage: python create_pseudo_masks.py <metadata_path> <root_dir>")
+        print("Example: python create_pseudo_masks.py dataset/ijmond_bbox/filtered_bbox_labels_1_aug_2025.json dataset/ijmond_bbox/img_npy/")
+        sys.exit(1)
+
+    metadata_path = sys.argv[1]
+    root_dir = sys.argv[2]
 
     dataset = IjmondBboxDataset(metadata_path, root_dir)
     print(f"Dataset size: {len(dataset)}")

@@ -3,8 +3,6 @@ dataset/ijmond_bbox/img/*
 dataset/ijmond_bbox/img_npy/*
 dataset/ijmond_bbox/debug/*
 dataset/ijmond_seg/*
-dataset/smoke5k/test
-dataset/smoke5k/train
 dataset/smoke5k/*.json
 dataset/ijmond_pseudo_masks/*
 debug*

@@ -243,7 +243,7 @@ def get_final_boxes(boxes):
 if __name__ == "__main__":
     if len(sys.argv) != 3:
         print("Usage: python filter_aggr_bbox.py <input_metadata_path> <output_metadata_path>")
-        print("Example: python filter_aggr_bbox.py dataset/ijmond_bbox/bbox_labels_4_july_2025.json dataset/ijmond_bbox/filtered_bbox_labels_4_july_2025.json")
+        print("Example: python filter_aggr_bbox.py dataset/ijmond_bbox/bbox_labels_1_aug_2025.json dataset/ijmond_bbox/filtered_bbox_labels_1_aug_2025.json")
         sys.exit(1)
 
     metadata_path = sys.argv[1]

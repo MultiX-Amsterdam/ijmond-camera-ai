@@ -4,19 +4,21 @@ This folder contains a weakly semi-supervised learning pipeline that uses boundi
 
 Prepare IJmond bounding boxes for training:
 ```sh
-cd bbox_learn/dataset/ijmond_bbox
-python download_bbox.py bbox_labels_4_july_2025.json
-cd ../../
-python filter_aggr_bbox.py dataset/ijmond_bbox/bbox_labels_4_july_2025.json dataset/ijmond_bbox/filtered_bbox_labels_4_july_2025.json
+python download_ijmond_bbox_images.py dataset/ijmond_bbox/bbox_labels_1_aug_2025.json
+python filter_aggr_bbox.py dataset/ijmond_bbox/bbox_labels_1_aug_2025.json dataset/ijmond_bbox/filtered_bbox_labels_1_aug_2025.json
 ```
 
 Test if the IJmond bounding boxes can be loaded:
 ```sh
-python ijmond_bbox_dataset.py dataset/ijmond_bbox/filtered_bbox_labels_4_july_2025.json dataset/ijmond_bbox/img_npy/
+python ijmond_bbox_dataset.py dataset/ijmond_bbox/filtered_bbox_labels_1_aug_2025.json dataset/ijmond_bbox/img_npy/
 ```
 
 Prepare SMOKE5K for training:
 ```sh
-cd bbox_learn/dataset/smoke5k
-python create_smoke5k_metadata_and_npy.py
+python create_smoke5k_metadata_and_npy.py dataset/smoke5k/
+```
+
+Create pseudo masks using the IJmond bounding boxes and save the masks in the `dataset/ijmond_pseudo_masks/` path:
+```sh
+python create_pseudo_masks.py dataset/ijmond_bbox/filtered_bbox_labels_1_aug_2025.json dataset/ijmond_bbox/img_npy/
 ```
