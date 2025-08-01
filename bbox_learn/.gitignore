@@ -1,4 +1,5 @@
 dataset/ijmond_bbox/*.json
+!dataset/ijmond_bbox/bbox_labels*.json
 dataset/ijmond_bbox/img/*
 dataset/ijmond_bbox/img_npy/*
 dataset/ijmond_bbox/debug/*
