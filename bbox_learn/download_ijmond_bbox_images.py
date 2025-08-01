@@ -67,12 +67,17 @@ def download_all_images(data, folder):
 
 
 if __name__ == "__main__":
-    if len(sys.argv) != 2:
-        print("Usage: python download_ijmond_bbox_images.py <bbox_labels_file.json>")
-        print("Example: python download_ijmond_bbox_images.py dataset/ijmond_bbox/bbox_labels_1_aug_2025.json")
+    if len(sys.argv) != 3:
+        print("Usage: python download_ijmond_bbox_images.py <bbox_labels_file.json> <image_folder>")
+        print("Example: python download_ijmond_bbox_images.py dataset/ijmond_bbox/bbox_labels_1_aug_2025.json dataset/ijmond_bbox/img")
         sys.exit(1)
 
     bbox_file = sys.argv[1]
+    image_folder = sys.argv[2]
+
+    if not os.path.exists(image_folder):
+        print(f"Creating folder: {image_folder}")
+        os.makedirs(image_folder)
 
     if not os.path.exists(bbox_file):
         print(f"Error: File '{bbox_file}' not found.")
@@ -80,8 +85,8 @@ if __name__ == "__main__":
 
     data = load_bbox(bbox_file)
 
-    # Example: Download all original images to the "img" folder
-    download_all_images(data, "img")
+    # Example: Download all original images to the specified folder
+    download_all_images(data, image_folder)
 
     # Print the last record in pretty format
     last_record = data['data'][-1]

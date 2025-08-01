@@ -241,13 +241,18 @@ def get_final_boxes(boxes):
 
 
 if __name__ == "__main__":
-    if len(sys.argv) != 3:
-        print("Usage: python filter_aggr_bbox.py <input_metadata_path> <output_metadata_path>")
-        print("Example: python filter_aggr_bbox.py dataset/ijmond_bbox/bbox_labels_1_aug_2025.json dataset/ijmond_bbox/filtered_bbox_labels_1_aug_2025.json")
+    if len(sys.argv) != 4:
+        print("Usage: python filter_aggr_bbox_and_create_npy.py <input_metadata_path> <output_metadata_path> <root_dir>")
+        print("Example: python filter_aggr_bbox_and_create_npy.py dataset/ijmond_bbox/bbox_labels_1_aug_2025.json dataset/ijmond_bbox/filtered_bbox_labels_1_aug_2025.json dataset/ijmond_bbox/")
         sys.exit(1)
 
     metadata_path = sys.argv[1]
     filtered_metadata_path = sys.argv[2]
+    root_dir = sys.argv[3]
+
+    if not os.path.exists(root_dir):
+        print(f"Error: Root directory '{root_dir}' not found.")
+        sys.exit(1)
 
     if not os.path.exists(metadata_path):
         print(f"Error: Input file '{metadata_path}' not found.")
@@ -395,8 +400,8 @@ if __name__ == "__main__":
     for state, records in filtered_metadata_by_state.items():
         for record in records:
             img_id = record["id"]
-            img_path = f"dataset/ijmond_bbox/img/{img_id}.png"
-            save_path = f"dataset/ijmond_bbox/debug/state_{state}/{img_id}.png"
+            img_path = os.path.join(root_dir, f"img/{img_id}.png")
+            save_path = os.path.join(root_dir, f"debug/state_{state}/{img_id}.png")
             bbox_list = []
             # Draw debug bounding boxes if available
             if record["debug_bbox_list"]:
@@ -405,7 +410,7 @@ if __name__ == "__main__":
             if record["bbox"] is not None:
                 bbox_list.extend(record["bbox"])
             draw_bbox_on_image(img_path, save_path, bbox_list)
-            convert_images_to_npy(img_path, f"dataset/ijmond_bbox/img_npy/{img_id}.npy");
+            convert_images_to_npy(img_path, os.path.join(root_dir, f"img_npy/{img_id}.npy"))
             print(f"Overlay saved to {save_path}")
 
     # Print the total number of records

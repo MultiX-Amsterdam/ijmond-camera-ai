@@ -121,5 +121,5 @@ if __name__ == "__main__":
     convert_all_images_to_npy(os.path.join(root_dir, "test/gt"), os.path.join(root_dir, "test/gt_npy"))
     convert_all_images_to_npy(os.path.join(root_dir, "train/img"), os.path.join(root_dir, "train/img_npy"))
     convert_all_images_to_npy(os.path.join(root_dir, "train/gt"), os.path.join(root_dir, "train/gt_npy"))
-    create_smoke5k_metadata(os.path.join(root_dir, "test/img_npy"), os.path.join(root_dir, "test/gt_npy"), "smoke5k_metadata_test.json")
-    create_smoke5k_metadata(os.path.join(root_dir, "train/img_npy"), os.path.join(root_dir, "train/gt_npy"), "smoke5k_metadata_train.json")
+    create_smoke5k_metadata(os.path.join(root_dir, "test/img_npy"), os.path.join(root_dir, "test/gt_npy"), os.path.join(root_dir, "smoke5k_metadata_test.json"))
+    create_smoke5k_metadata(os.path.join(root_dir, "train/img_npy"), os.path.join(root_dir, "train/gt_npy"), os.path.join(root_dir, "smoke5k_metadata_train.json"))

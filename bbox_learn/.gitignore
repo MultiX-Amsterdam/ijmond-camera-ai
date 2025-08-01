@@ -4,6 +4,7 @@ dataset/ijmond_bbox/img_npy/*
 dataset/ijmond_bbox/debug/*
 dataset/ijmond_seg/*
 dataset/smoke5k/*.json
+dataset/smoke5k/**/*.npy
 dataset/ijmond_pseudo_masks/*
 debug*
 *.pth
