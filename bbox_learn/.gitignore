@@ -6,4 +6,6 @@ dataset/ijmond_seg/*
 dataset/smoke5k/test
 dataset/smoke5k/train
 dataset/smoke5k/*.json
+dataset/ijmond_pseudo_masks/*
 debug*
+*.pth
