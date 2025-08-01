@@ -9,7 +9,7 @@ from util.util import (
     is_file_here
 )
 from torchvision.transforms import v2
-from util.helpers import plot
+from util.util import plot
 
 
 class Smoke5kDataset(Dataset):

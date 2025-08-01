@@ -18,6 +18,11 @@ Prepare SMOKE5K for training. This will create `.npy` files and also metadata js
 python create_smoke5k_metadata_and_npy.py dataset/smoke5k/
 ```
 
+Check if the SMOKE5K dataset can be loaded. This will create `debug_plot_smoke5k_img.png` and `debug_plot_smoke5k_gt.png` files for debugging.
+```sh
+python smoke5k_dataset.py dataset/smoke5k/smoke5k_metadata_train.json dataset/smoke5k/train/img_npy/ dataset/smoke5k/train/gt_npy/
+```
+
 Create pseudo masks using the IJmond bounding boxes and save the masks in the `dataset/ijmond_pseudo_masks/` path:
 ```sh
 python create_pseudo_masks.py dataset/ijmond_bbox/filtered_bbox_labels_1_aug_2025.json dataset/ijmond_bbox/img_npy/
