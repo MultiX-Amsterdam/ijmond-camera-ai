@@ -13,17 +13,22 @@ Test if the IJmond bounding boxes can be loaded. This will create a `debug_plot_
 python ijmond_bbox_dataset.py dataset/ijmond_bbox/filtered_bbox_labels_1_aug_2025.json dataset/ijmond_bbox/img_npy/
 ```
 
-Prepare SMOKE5K for training. This will create `.npy` files and also metadata json files in `dataset/smoke5k/`.
+Prepare SMOKE5K for training. This will create `.npy` files and also metadata txt files in `dataset/smoke5k/`.
 ```sh
 python create_smoke5k_metadata_and_npy.py dataset/smoke5k/
 ```
 
-Check if the SMOKE5K dataset can be loaded. This will create `debug_plot_smoke5k_img.png` and `debug_plot_smoke5k_gt.png` files for debugging.
+Check if the SMOKE5K dataset can be loaded. This will create `debug_plot_smoke5k_test_img.png` and `debug_plot_smoke5k_test_gt.png` files for debugging.
 ```sh
-python smoke5k_dataset.py dataset/smoke5k/smoke5k_metadata_train.json dataset/smoke5k/train/img_npy/ dataset/smoke5k/train/gt_npy/
+python smoke_dataset.py dataset/smoke5k/test/test.txt dataset/smoke5k/test/ smoke5k_test
 ```
 
-Create pseudo masks using the IJmond bounding boxes and save the masks in the `dataset/ijmond_pseudo_masks/` path:
+Create pseudo masks and metadata txt files (one with masks, one without masks) using the IJmond bounding boxes and save the masks in the `dataset/ijmond_pseudo_masks/` path:
 ```sh
 python create_pseudo_masks.py dataset/ijmond_bbox/filtered_bbox_labels_1_aug_2025.json dataset/ijmond_bbox/img_npy/
+```
+
+Check if the IJmond pseudo masks dataset can be loaded. This will create `debug_plot_ijmond_pseudo_masks_with_mask_img.png` and `debug_plot_ijmond_pseudo_masks_with_mask_gt.png` files for debugging.
+```sh
+python smoke_dataset.py dataset/ijmond_pseudo_masks/train_with_mask.txt dataset/ijmond_pseudo_masks/ ijmond_pseudo_mask_with_mask
 ```

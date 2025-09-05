@@ -28,11 +28,21 @@ def save_json(content, fpath):
         json.dump(content, f)
 
 
+def load_pair_txt(fpath):
+    pairs = []
+    with open(fpath, "r") as f:
+        for line in f:
+            line = line.strip()
+            if line:
+                pairs.append(line.split())
+    return pairs
+
+
 def is_file_here(file_path):
     return os.path.isfile(file_path)
 
 
-def convert_images_to_npy(image_path, npy_path):
+def convert_images_to_npy(image_path, npy_path, gray_scale=False):
     """Convert a single jpg/png image to .npy file. Create output directory if needed."""
     output_dir = os.path.dirname(npy_path)
     if output_dir and not os.path.exists(output_dir):
@@ -40,7 +50,10 @@ def convert_images_to_npy(image_path, npy_path):
     if os.path.exists(npy_path):
         print(f"Skipping {npy_path} (already exists)")
         return
-    img = Image.open(image_path).convert("RGB")
+    if gray_scale:
+        img = Image.open(image_path).convert("L")
+    else:
+        img = Image.open(image_path).convert("RGB")
     arr = np.array(img)
     np.save(npy_path, arr)
     print(f"Converted {os.path.basename(image_path)} to {os.path.basename(npy_path)}")

@@ -10,27 +10,13 @@ import json
 from PIL import Image
 import numpy as np
 from pathlib import Path
+from util.util import (
+    is_file_here,
+    convert_images_to_npy
+)
 
 
-def is_file_here(file_path):
-    return os.path.isfile(file_path)
-
-
-def convert_images_to_npy(image_path, npy_path):
-    """Convert a single jpg/png image to .npy file. Create output directory if needed."""
-    output_dir = os.path.dirname(npy_path)
-    if output_dir and not os.path.exists(output_dir):
-        os.makedirs(output_dir)
-    if os.path.exists(npy_path):
-        print(f"Skipping {npy_path} (already exists)")
-        return
-    img = Image.open(image_path).convert("RGB")
-    arr = np.array(img)
-    np.save(npy_path, arr)
-    print(f"Converted {os.path.basename(image_path)} to {os.path.basename(npy_path)}")
-
-
-def convert_all_images_to_npy(input_dir, output_dir):
+def convert_all_images_to_npy(input_dir, output_dir, gray_scale=False):
     """
     Convert all images in a directory to .npy files.
 
@@ -67,22 +53,29 @@ def convert_all_images_to_npy(input_dir, output_dir):
         # Change extension to .npy
         npy_filename = os.path.splitext(filename)[0] + '.npy'
         npy_path = os.path.join(output_dir, npy_filename)
-
-        convert_images_to_npy(image_path, npy_path)
+        convert_images_to_npy(image_path, npy_path, gray_scale=gray_scale)
 
     print(f"Conversion complete! Converted {len(image_files)} images to .npy format.")
 
 
-def create_smoke5k_metadata(img_root_dir, gt_root_dir, metadata_path):
+def create_smoke5k_metadata(img_root_dir, gt_root_dir, output_dir, output_name="train"):
     """
-    Create metadata for the Smoke5k dataset.
+    Create metadata for the Smoke5k dataset in a single .txt file.
 
     Args:
         img_root_dir (str): The root directory containing the images in .npy format.
         gt_root_dir (str): The root directory containing the ground truth segmentation masks in .npy format.
-        metadata_path (str): The path where the metadata JSON file will be saved.
+        output_dir (str): The directory where the .txt file will be saved.
+        output_name (str): The name prefix for the output file.
     """
-    metadata = []
+    # Create output directory if it doesn't exist
+    os.makedirs(output_dir, exist_ok=True)
+
+    # Prepare file path
+    output_file = os.path.join(output_dir, f"{output_name}.txt")
+
+    all_pairs = []
+
     image_files = list(Path(img_root_dir).glob("*.npy"))
 
     for image_file in image_files:
@@ -98,16 +91,20 @@ def create_smoke5k_metadata(img_root_dir, gt_root_dir, metadata_path):
             print(f"Warning: Ground truth file for {image_id} not found in {gt_root_dir}. Skipping.")
             continue
 
-        # Create metadata entry
-        entry = {
-            "id": image_id
-        }
-        metadata.append(entry)
+        # Create relative paths (assuming the txt files will be in the same directory structure)
+        img_relative_path = f"img_npy/{image_id}.npy"
+        mask_relative_path = f"gt_npy/{image_id}.npy"
 
-    # Save metadata to JSON file
-    with open(metadata_path, 'w') as f:
-        json.dump(metadata, f)
-    print(f"Metadata created and saved to {metadata_path}")
+        # Add all pairs to the single list
+        all_pairs.append(f"{img_relative_path} {mask_relative_path}")
+
+    # Write file
+    with open(output_file, 'w') as f:
+        for pair in all_pairs:
+            f.write(f"{pair}\n")
+
+    print(f"Created {output_name} file:")
+    print(f"  {output_file} with {len(all_pairs)} image-mask pairs")
 
 
 if __name__ == "__main__":
@@ -118,8 +115,8 @@ if __name__ == "__main__":
 
     root_dir = sys.argv[1]
     convert_all_images_to_npy(os.path.join(root_dir, "test/img"), os.path.join(root_dir, "test/img_npy"))
-    convert_all_images_to_npy(os.path.join(root_dir, "test/gt"), os.path.join(root_dir, "test/gt_npy"))
+    convert_all_images_to_npy(os.path.join(root_dir, "test/gt"), os.path.join(root_dir, "test/gt_npy"), gray_scale=True)
     convert_all_images_to_npy(os.path.join(root_dir, "train/img"), os.path.join(root_dir, "train/img_npy"))
-    convert_all_images_to_npy(os.path.join(root_dir, "train/gt"), os.path.join(root_dir, "train/gt_npy"))
-    create_smoke5k_metadata(os.path.join(root_dir, "test/img_npy"), os.path.join(root_dir, "test/gt_npy"), os.path.join(root_dir, "smoke5k_metadata_test.json"))
-    create_smoke5k_metadata(os.path.join(root_dir, "train/img_npy"), os.path.join(root_dir, "train/gt_npy"), os.path.join(root_dir, "smoke5k_metadata_train.json"))
+    convert_all_images_to_npy(os.path.join(root_dir, "train/gt"), os.path.join(root_dir, "train/gt_npy"), gray_scale=True)
+    create_smoke5k_metadata(os.path.join(root_dir, "test/img_npy"), os.path.join(root_dir, "test/gt_npy"), os.path.join(root_dir, "test"), output_name="test")
+    create_smoke5k_metadata(os.path.join(root_dir, "train/img_npy"), os.path.join(root_dir, "train/gt_npy"), os.path.join(root_dir, "train"), output_name="train")

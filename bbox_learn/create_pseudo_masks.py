@@ -168,21 +168,13 @@ def main():
     print(f"Model loaded successfully!")
     print(f"SAM model type: {type(sam_model)}")
 
-    # Filter dataset to only include samples with bounding boxes
-    print("Filtering dataset to only include samples with bounding boxes...")
-    sample_ids_with_boxes = []
-    for i in range(len(dataset)):
-        sample = dataset[i]
-        if sample['boxes'] is not None and len(sample['boxes']) > 0:
-            sample_ids_with_boxes.append(i)
-    print(f"Found {len(sample_ids_with_boxes)} samples with bounding boxes out of {len(dataset)} total samples")
+    # Include all samples in the dataset (both with and without bounding boxes)
+    print("Processing all samples in the dataset...")
+    print(f"Total samples: {len(dataset)}")
 
-    # Create a subset dataset with only samples that have boxes
-    filtered_dataset = Subset(dataset, sample_ids_with_boxes)
-
-    # Create a DataLoader for testing with filtered dataset
+    # Create a DataLoader for all samples
     dataloader = DataLoader(
-        filtered_dataset,
+        dataset,
         batch_size=20,
         shuffle=False, # Do not shuffle for consistent processing
         collate_fn=collate_fn,
@@ -224,13 +216,10 @@ def main():
         print(f"Number of images in batch: {len(images)}")
         print(f"Number of targets in batch: {len(targets)}")
 
-        # Verify that all data points have bounding boxes
+        # Process all samples, including those without bounding boxes
         for i, target in enumerate(targets):
             num_boxes = len(target['boxes'])
             print(f"Batch {batch_idx}, Target {i}: {num_boxes} boxes, {len(target['labels'])} labels")
-            if num_boxes == 0:
-                print(f"Error: Batch {batch_idx}, Target {i} has no bounding boxes!")
-                continue
 
         # Process each data point with SAM in this batch
         batch_masks = []  # Store masks for this batch only
@@ -249,44 +238,51 @@ def main():
 
             # Process all bounding boxes for this image
             image_masks = []
-            for box_idx, gt_box in enumerate(gt_boxes):
-                print(f"Processing box {box_idx + 1}/{len(gt_boxes)}: [{gt_box[0]:.1f}, {gt_box[1]:.1f}, {gt_box[2]:.1f}, {gt_box[3]:.1f}]")
 
-                # Prepare image for SAM (expects RGB in range [0, 255])
-                if image.max() <= 1.0:
-                    img_input = (image * 255).to(torch.uint8)
-                else:
-                    img_input = image.to(torch.uint8)
+            if len(gt_boxes) > 0:
+                # Process images with bounding boxes using SAM
+                for box_idx, gt_box in enumerate(gt_boxes):
+                    print(f"Processing box {box_idx + 1}/{len(gt_boxes)}: [{gt_box[0]:.1f}, {gt_box[1]:.1f}, {gt_box[2]:.1f}, {gt_box[3]:.1f}]")
 
-                # Set image for SAM - convert from CHW to HWC format and to numpy
-                img_input_numpy = img_input.permute(1, 2, 0).cpu().numpy()
+                    # Prepare image for SAM (expects RGB in range [0, 255])
+                    if image.max() <= 1.0:
+                        img_input = (image * 255).to(torch.uint8)
+                    else:
+                        img_input = image.to(torch.uint8)
 
-                # SAM expects HWC format as numpy array
-                print(f"Image input numpy shape: {img_input_numpy.shape}")
-                sam_model.set_image(img_input_numpy)
+                    # Set image for SAM - convert from CHW to HWC format and to numpy
+                    img_input_numpy = img_input.permute(1, 2, 0).cpu().numpy()
 
-                # Use bounding box as prompt for SAM
-                box_prompt = gt_box.cpu().numpy() # Ensure it's on CPU and convert to numpy
-                print(f"Box prompt: {box_prompt}")
+                    # SAM expects HWC format as numpy array
+                    print(f"Image input numpy shape: {img_input_numpy.shape}")
+                    sam_model.set_image(img_input_numpy)
 
-                # Generate mask using box prompt
-                masks, scores, logits = sam_model.predict(
-                    point_coords=None,
-                    point_labels=None,
-                    box=box_prompt,
-                    multimask_output=False,
-                )
+                    # Use bounding box as prompt for SAM
+                    box_prompt = gt_box.cpu().numpy() # Ensure it's on CPU and convert to numpy
+                    print(f"Box prompt: {box_prompt}")
 
-                pred_mask = None
-                if len(masks) > 0:
-                    # Use the first (and only) mask from SAM
-                    pred_mask = masks[0]
-                    pred_score = scores[0]
-                    print(f"SAM prediction: Mask shape={pred_mask.shape}, Score={pred_score:.3f}")
-                    print(f"Mask area: {pred_mask.sum()} pixels")
-                    image_masks.append(torch.from_numpy(pred_mask).bool())
-                else:
-                    print(f"SAM prediction: No masks generated for box {box_idx + 1}")
+                    # Generate mask using box prompt
+                    masks, scores, logits = sam_model.predict(
+                        point_coords=None,
+                        point_labels=None,
+                        box=box_prompt,
+                        multimask_output=False,
+                    )
+
+                    if len(masks) > 0:
+                        # Use the first (and only) mask from SAM
+                        pred_mask = masks[0]
+                        pred_score = scores[0]
+                        print(f"SAM prediction: Mask shape={pred_mask.shape}, Score={pred_score:.3f}")
+                        print(f"Mask area: {pred_mask.sum()} pixels")
+                        image_masks.append(torch.from_numpy(pred_mask).bool())
+                    else:
+                        print(f"SAM prediction: No masks generated for box {box_idx + 1}")
+            else:
+                # For images without bounding boxes, create an empty mask (all background)
+                print("No bounding boxes found - creating empty mask (all background)")
+                empty_mask = torch.zeros((image.shape[1], image.shape[2]), dtype=torch.bool)
+                image_masks.append(empty_mask)
 
             # Store results for this image (including masks for batch processing)
             mask_info = {
@@ -314,7 +310,7 @@ def main():
 
             # Update statistics
             total_masks_generated += len(image_masks)
-            if len(image_masks) > 0:
+            if len(gt_boxes) > 0 and len(image_masks) > 0:
                 images_with_masks += 1
 
             # Add to plot data if we haven't reached the limit
@@ -350,22 +346,40 @@ def main():
     print(f"Total masks generated: {total_masks_generated}")
     print(f"Images with at least one mask: {images_with_masks}")
 
-    # Create train.txt file in MS COCO format
-    train_txt_file = os.path.join(output_dir, "train.txt")
-    with open(train_txt_file, 'w') as f:
+    # Create separate train files for images with and without masks
+    train_with_mask_file = os.path.join(output_dir, "train_with_mask.txt")
+    train_without_mask_file = os.path.join(output_dir, "train_without_mask.txt")
+
+    with_mask_count = 0
+    without_mask_count = 0
+
+    with open(train_with_mask_file, 'w') as f_with, open(train_without_mask_file, 'w') as f_without:
         for metadata_info in all_metadata:
-            if metadata_info['num_masks_generated'] > 0:
-                image_idx = metadata_info['image_idx']
-                # For each mask generated for this image
+            image_idx = metadata_info['image_idx']
+            num_boxes = metadata_info['num_boxes']
+
+            if num_boxes > 0:
+                # Images with bounding boxes (and therefore masks)
                 for mask_idx in range(metadata_info['num_masks_generated']):
                     img_path = f"img_npy/img_{image_idx:04d}.npy"
                     mask_path = f"mask_npy/mask_img_{image_idx:04d}_box_{mask_idx:02d}.npy"
-                    f.write(f"{img_path} {mask_path}\n")
+                    f_with.write(f"{img_path} {mask_path}\n")
+                    with_mask_count += 1
+            else:
+                # Images without bounding boxes (empty masks)
+                for mask_idx in range(metadata_info['num_masks_generated']):
+                    img_path = f"img_npy/img_{image_idx:04d}.npy"
+                    mask_path = f"mask_npy/mask_img_{image_idx:04d}_box_{mask_idx:02d}.npy"
+                    f_without.write(f"{img_path} {mask_path}\n")
+                    without_mask_count += 1
 
-    print(f"Created train.txt file with {total_masks_generated} image-mask pairs")
+    print(f"Created train files:")
+    print(f"  train_with_mask.txt with {with_mask_count} image-mask pairs")
+    print(f"  train_without_mask.txt with {without_mask_count} image-mask pairs")
 
     print(f"\nFinal file structure:")
-    print(f"  {output_dir}/train.txt - training pairs in MS COCO format")
+    print(f"  {output_dir}/train_with_mask.txt - training pairs with masks in MS COCO format")
+    print(f"  {output_dir}/train_without_mask.txt - training pairs without masks in MS COCO format")
     print(f"  {img_npy_dir}/ - original images as .npy files")
     print(f"  {img_png_dir}/ - original images as .png files")
     print(f"  {mask_npy_dir}/ - generated masks as .npy files")
