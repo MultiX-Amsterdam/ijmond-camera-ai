@@ -40,22 +40,24 @@ class SmokeDataset(Dataset):
         # Change dimensions fro (H, W, C) to (C, H, W)
         img = img.permute(2, 0, 1)
 
-        # Construct file paths for ground truth mask
-        gt_file_path = os.path.join(self.root_dir, f"{v[1]}")
-        if not is_file_here(gt_file_path):
-            raise ValueError("Cannot find file: %s" % (gt_file_path))
-
-        # Load ground truth segmentation mask from .npy file
-        gt = torch.from_numpy(np.load(gt_file_path).astype(np.uint8))
-
-        # Convert to tv_tensors.Mask for proper transform handling
-        gt = tv_tensors.Mask(gt)
-
-        # Transform image
-        if self.transform:
-            img, gt = self.transform(img, gt)
-
-        return {"img": img, "gt": gt}
+        if v[1] == "None":
+            # For unlabeled data, return only the image
+            if self.transform:
+                img = self.transform(img)
+            return {"img": img, "gt": None}
+        else:
+            # Construct file paths for ground truth mask
+            gt_file_path = os.path.join(self.root_dir, f"{v[1]}")
+            if not is_file_here(gt_file_path):
+                raise ValueError("Cannot find file: %s" % (gt_file_path))
+            # Load ground truth segmentation mask from .npy file
+            gt = torch.from_numpy(np.load(gt_file_path).astype(np.uint8))
+            # Convert to tv_tensors.Mask for proper transform handling
+            gt = tv_tensors.Mask(gt)
+            # Transform image
+            if self.transform:
+                img, gt = self.transform(img, gt)
+            return {"img": img, "gt": gt}
 
 
 if __name__ == "__main__":
@@ -65,6 +67,7 @@ if __name__ == "__main__":
         print("Example: python smoke_dataset.py dataset/smoke5k/train/train.txt dataset/smoke5k/train/ smoke5k_train")
         print("Example: python smoke_dataset.py dataset/ijmond_pseudo_masks/train_with_mask.txt dataset/ijmond_pseudo_masks/ ijmond_pseudo_mask_with_mask")
         print("Example: python smoke_dataset.py dataset/ijmond_pseudo_masks/train_without_mask.txt dataset/ijmond_pseudo_masks/ ijmond_pseudo_mask_without_mask")
+        print("Example: python smoke_dataset.py dataset/ijmond_vid/unlabeled.txt dataset/ijmond_vid/ ijmond_vid_unlabeled")
         sys.exit(1)
 
     metadata_path = sys.argv[1]
@@ -89,8 +92,9 @@ if __name__ == "__main__":
     for d in D:
         print(f"Sample img shape: {d['img'].shape}")
         print(f"Sample img values: {d['img'][0, 0:5, 0:5]}")
-        print(f"Sample gt shape: {d['gt'].shape}")
-        print(f"Sample gt values: {d['gt'][0:5, 0:5]}")
+        if d['gt'] is not None:
+            print(f"Sample gt shape: {d['gt'].shape}")
+            print(f"Sample gt values: {d['gt'][0:5, 0:5]}")
         s = d
         break
 
@@ -105,8 +109,10 @@ if __name__ == "__main__":
     for st in DT:
         print(f"Sample img shape after transform: {st['img'].shape}")
         print(f"Sample img values after transform: {st['img'][0, 0:5, 0:5]}")
-        print(f"Sample gt shape after transform: {st['gt'].shape}")
-        print(f"Sample gt values after transform: {st['gt'][0:5, 0:5]}")
+        if st['gt'] is not None:
+            print(f"Sample gt shape after transform: {st['gt'].shape}")
+            print(f"Sample gt values after transform: {st['gt'][0:5, 0:5]}")
         plot([(s['img']), (st['img'])], f"debug_plot_{dataset_name}_img.png")
-        plot([(s['gt']), (st['gt'])], f"debug_plot_{dataset_name}_gt.png")
+        if s['gt'] is not None and st['gt'] is not None:
+            plot([(s['gt']), (st['gt'])], f"debug_plot_{dataset_name}_gt.png")
         break

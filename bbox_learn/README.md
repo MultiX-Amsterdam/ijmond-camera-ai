@@ -32,3 +32,15 @@ Check if the IJmond pseudo masks dataset can be loaded. This will create `debug_
 ```sh
 python smoke_dataset.py dataset/ijmond_pseudo_masks/train_with_mask.txt dataset/ijmond_pseudo_masks/ ijmond_pseudo_mask_with_mask
 ```
+
+Prepare the unlabeled data from IJmond Videos. This will download videos, extract frames, and create a metadata txt file.
+```sh
+cd dataset/ijmond_vid/
+python download_videos.py
+python extract_frames.py
+```
+
+Check if the unlabeled IJmond video dataset can be loaded. This will create the `debug_plot_ijmond_vid_unlabeled_img.png` file for debugging.
+```sh
+python smoke_dataset.py dataset/ijmond_vid/unlabeled.txt dataset/ijmond_vid/ ijmond_vid_unlabeled
+```
