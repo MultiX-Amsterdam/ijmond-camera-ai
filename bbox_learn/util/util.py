@@ -16,6 +16,7 @@ from torchvision.utils import (
 )
 from torchvision import tv_tensors
 from torchvision.transforms.v2 import functional as F
+import matplotlib.colors as colors
 
 
 def load_json(fpath):
@@ -242,7 +243,6 @@ def plot(imgs, save_path, title=None, **imshow_kwargs):
                     img_height, img_width = img.shape[1], img.shape[2]
 
                     # Create a custom colormap where 0 values are transparent
-                    import matplotlib.colors as colors
                     cmap = plt.cm.viridis.copy()
                     cmap.set_under('none')  # Make values below vmin transparent
 
