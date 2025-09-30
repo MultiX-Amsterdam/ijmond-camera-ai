@@ -9,7 +9,7 @@ from util.util import (
     is_file_here
 )
 from torchvision.transforms import v2
-from util.helpers import plot
+from util.util import plot
 
 
 class IjmondBboxDataset(Dataset):
@@ -39,6 +39,10 @@ class IjmondBboxDataset(Dataset):
         # Change dimensions fro (H, W, C) to (C, H, W)
         img = img.permute(2, 0, 1)
 
+        # Transform data type to float32 and scale to [0, 1]
+        t = v2.ToDtype(torch.float32, scale=True)
+        img = t(img)
+
         # Load bounding boxes and convert to xyxy format
         b_list = v["bbox"]
         if b_list == None:
@@ -66,6 +70,7 @@ class IjmondBboxDataset(Dataset):
 
 
 if __name__ == "__main__":
+    # Code to test the dataset loading and transformations
     if len(sys.argv) != 3:
         print("Usage: python ijmond_bbox_dataset.py <metadata_path> <root_dir>")
         print("Example: python ijmond_bbox_dataset.py dataset/ijmond_bbox/filtered_bbox_labels_4_july_2025.json dataset/ijmond_bbox/img_npy/")
@@ -93,10 +98,16 @@ if __name__ == "__main__":
             s = d
             break
 
+    # Get the distribution of bounding box numbers
+    bbox_counts = [len(v["bbox"]) if v["bbox"] is not None else 0 for v in D.metadata]
+    unique_counts, counts = np.unique(bbox_counts, return_counts=True)
+    print("Bounding box counts distribution:")
+    for count, freq in zip(unique_counts, counts):
+        print(f"{count} bounding boxes: {freq} samples")
+
     transforms = v2.Compose([
         v2.RandomHorizontalFlip(p=0.5),
         v2.ColorJitter(brightness=0.3, contrast=0.3, saturation=0.3, hue=0.01),
-        v2.ToDtype(torch.float32, scale=True),
         v2.Resize((400, 400), antialias=True)
     ])
 

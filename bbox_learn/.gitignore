@@ -1,7 +1,14 @@
 dataset/ijmond_bbox/*.json
+!dataset/ijmond_bbox/bbox_labels*.json
 dataset/ijmond_bbox/img/*
 dataset/ijmond_bbox/img_npy/*
 dataset/ijmond_bbox/debug/*
 dataset/ijmond_seg/*
-dataset/smoke5k/*
+dataset/smoke5k/**/*.txt
+dataset/smoke5k/**/*.npy
+dataset/ijmond_pseudo_masks/*
+dataset/ijmond_vid/videos/*
+dataset/ijmond_vid/frames/*
+dataset/ijmond_vid/**/*.txt
 debug*
+*.pth
