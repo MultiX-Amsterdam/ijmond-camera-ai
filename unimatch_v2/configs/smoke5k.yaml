@@ -1,0 +1,21 @@
+# arguments for dataset
+dataset: smoke5k
+data_root: bbox_learn/dataset/smoke5k/
+nclass: 1
+crop_size: 518
+
+# arguments for training
+epochs: 4
+batch_size: 8 # per GPU
+lr: 0.000005
+lr_multi: 40.0
+criterion:
+  name: CELoss
+  kwargs:
+    ignore_index: 255
+conf_thresh: 0.95
+
+# arguments for model
+model: dpt
+backbone: dinov2_small
+lock_backbone: True
