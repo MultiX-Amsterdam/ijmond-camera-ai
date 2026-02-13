@@ -164,6 +164,10 @@ Then, depending on the research question, we finetune the model (or not) based o
 
 During the finetuning stage, we always use the full set of images with masks (i.e., positive samples) and then combine it with some randomly selected negative samples (10% of the batch size) from the set without masks. For example, if we are using 100% of the training data, and the batch size is 40 when looping the dataloader of the `100_with_masks.txt` file, we will randomly pick 4 negative samples (10% of the batch size) from `100_without_masks.txt` and add these negative samples to the batch when performing one batch gradient descent step. Same thing applies for the `ijmond_pseudo_masks` dataset, which has `train_with_mask.txt` and `train_without_mask.txt`. The reason of doing this (not using too many negative samples) is because we do not want the model to just predict `no smoke` for all the pixels to get a low loss during training.
 
+### The unlabeled data sampling rule
+
+When using unlabeled data, we randomly sample a set of unlabeled images during training for each iteraton (i.e., each batch gradient descent step) to reduce the computation time. The number of unlabeled images is the same as labeled images, which is the same implementation as in the [UniMatchV2 paper](https://arxiv.org/abs/2410.10777).
+
 ### Datasets
 
 For simplicity, we use the following dataset abbreviations with their paths. For the citizen-contributed data, we have:
