@@ -108,11 +108,6 @@ So, after that, the file structure should look like below:
         └── _annotations.coco.json # the annotation file
 ```
 
-Then, you can check if the cropped IJmond segmentation dataset can be loaded. This will create the `debug_plot_ijmond_seg_cropped_with_mask.png` and `debug_plot_ijmond_seg_cropped_with_mask_transformed.png` files for debugging.
-```sh
-python smoke_dataset.py dataset/ijmond_seg/test/cropped/test_with_mask.txt dataset/ijmond_seg/test/cropped/ ijmond_seg_cropped_with_mask
-```
-
 Finally, split the IJmond dataset into training, validation, and test sets. Check the documentation in the `split_ijmond_seg.py` file to understand how we split the data.
 ```sh
 python split_ijmond_seg.py
@@ -158,6 +153,11 @@ Below is the explaination for split by timestamp:
     ├── test_with_masks.txt # test set with masks, which is the next 20% after validation set
     ├── test_without_masks.txt
     └── metadata.json # the coverage of camera views and dates for each txt file
+```
+
+You can check if the cropped IJmond segmentation dataset can be loaded. This will create the `debug_plot_ijmond_seg_cropped_train_with_mask_20.png` and `debug_plot_ijmond_seg_cropped_train_with_mask_20_transformed.png` files for debugging.
+```sh
+python smoke_dataset.py dataset/ijmond_seg/test/cropped/splits/split_by_timestamp/train/20_with_masks.txt ijmond_seg_cropped_train_with_mask_20
 ```
 
 ## Experiment Settings
@@ -299,12 +299,12 @@ def evaluate_new(model, dataloader, w_pos=0.8, w_neg=0.2, threshold=0.5, multipl
                     new_h, new_w = 512, 512
                 else:
                     new_h, new_w = int(ori_h / multiplier + 0.5) * multiplier, int(ori_w / multiplier + 0.5) * multiplier
-               
+
                 images = F.interpolate(images, (new_h, new_w), mode='bilinear', align_corners=True)
 
             outputs = model(images)
 
-           
+
 
             if multiplier is not None:
                 outputs = F.interpolate(outputs, (ori_h, ori_w), mode='bilinear', align_corners=True)
@@ -370,7 +370,7 @@ def evaluate_new(model, dataloader, w_pos=0.8, w_neg=0.2, threshold=0.5, multipl
 
     # 2. Compute Weighted Final Metrics (The ones used for ranking)
     weight_sum = w_pos + w_neg
-   
+
     results = {
         "mIoU": (w_pos * mIoU_smoke + w_neg * mIoU_clear) / weight_sum,
         "mF2":  (w_pos * mF2_smoke + w_neg * mF2_clear) / weight_sum,

@@ -41,7 +41,7 @@ class SmokeDataset(Dataset):
         # Change dimensions fro (H, W, C) to (C, H, W)
         img = img.permute(2, 0, 1)
 
-        if v[1] == "None":
+        if len(v) == 1 or v[1] == "None":
             # For unlabeled data, return only the image
             if self.transform:
                 img = self.transform(img)
@@ -64,18 +64,14 @@ class SmokeDataset(Dataset):
 if __name__ == "__main__":
     if len(sys.argv) != 4:
         print("Usage: python smoke_dataset.py <metadata_path> <root_dir> <dataset_name>")
-        print("Example: python smoke_dataset.py dataset/smoke5k/test/test.txt dataset/smoke5k/test/ smoke5k_test")
-        print("Example: python smoke_dataset.py dataset/smoke5k/train/train.txt dataset/smoke5k/train/ smoke5k_train")
-        print("Example: python smoke_dataset.py dataset/ijmond_pseudo_masks/train_with_mask.txt dataset/ijmond_pseudo_masks/ ijmond_pseudo_mask_with_mask")
-        print("Example: python smoke_dataset.py dataset/ijmond_pseudo_masks/train_without_mask.txt dataset/ijmond_pseudo_masks/ ijmond_pseudo_mask_without_mask")
-        print("Example: python smoke_dataset.py dataset/ijmond_vid/unlabeled.txt dataset/ijmond_vid/ ijmond_vid_unlabeled")
-        print("Example: python smoke_dataset.py dataset/ijmond_seg/test/cropped/test_with_mask.txt dataset/ijmond_seg/test/cropped/ ijmond_seg_cropped_with_mask")
-        print("Example: python smoke_dataset.py dataset/ijmond_seg/test/cropped/test_without_mask.txt dataset/ijmond_seg/test/cropped/ ijmond_seg_cropped_without_mask")
+        print("See smoke_dataset.sh for example usage.")
         sys.exit(1)
 
-    metadata_path = sys.argv[1]
-    root_dir = sys.argv[2]
-    dataset_name = sys.argv[3]
+    metadata_path = sys.argv[1].strip()
+    root_dir = sys.argv[2].strip()
+    dataset_name = sys.argv[3].strip()
+    print("=" * 50)
+    print("dataset_name:", dataset_name)
 
     if not os.path.exists(metadata_path):
         print(f"Error: Metadata file '{metadata_path}' not found.")
