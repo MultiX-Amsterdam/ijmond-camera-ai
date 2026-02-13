@@ -31,6 +31,12 @@ python smoke_dataset.py dataset/smoke5k/test/test.txt dataset/smoke5k/test/ smok
 
 ### Create IJmond pseudo masks based on the bounding boxes
 
+We use Segment Anything (SAM) to create the pseudo masks. Before doing this, run the following on the terminal to install SAM:
+```sh
+pip install git+https://github.com/facebookresearch/segment-anything.git
+wget -P bbox_learn https://dl.fbaipublicfiles.com/segment_anything/sam_vit_l_0b3195.pth
+```
+
 Create pseudo masks and metadata txt files (one with masks, one without masks) using the IJmond bounding boxes and save the masks in the `dataset/ijmond_pseudo_masks/` path. This will create `debug_plot_pseudo_masks.png` file for debugging.
 ```sh
 python create_pseudo_masks.py dataset/ijmond_bbox/filtered_bbox_labels_1_aug_2025.json dataset/ijmond_bbox/img_npy/
