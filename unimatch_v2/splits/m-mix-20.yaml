@@ -1,0 +1,9 @@
+# arguments for setting up and training a model
+configuration: configs/ijmond.yaml
+smoke_dataset: datasets/mix_timestamp_train_20_with_masks.txt
+clear_dataset: datasets/mix_timestamp_train_20_without_masks.txt
+unlabeled_dataset: datasets/unlabeled.txt
+validation_dataset: datasets/expert_timestamp_val.txt
+test_dataset: datasets/expert_timestamp_test.txt
+test_model: best.pth
+pretrained_model: m-zeroshot

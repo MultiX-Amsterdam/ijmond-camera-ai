@@ -13,54 +13,64 @@ from torch.utils.data import Dataset
 from torchvision import transforms
 
 
-class SemiIjmondDataset(Dataset):
+class SemiSmokeDataset(Dataset):
     def __init__(self, name, root, mode, size=None, id_path=None, nsample=None):
         self.name = name
         self.root = root
         self.mode = mode
         self.size = size
-        self.root_directory = Path(__file__).parent.parent.parent.parent
+        self.data = os.path.join(root, id_path)
 
-        if mode == 'train_l' or mode == 'train_u':
-            with open(id_path, 'r') as f:
-                self.ids = f.read().splitlines()
-            if mode == 'train_l' and nsample is not None and nsample > len(self.ids):
-                self.ids *= math.ceil(nsample / len(self.ids))
-                self.ids = self.ids[:nsample]
-        else:
-            with open('splits/%s/test/test.txt' % name, 'r') as f:
-                self.ids = f.read().splitlines()
+        with open(self.data, 'r') as f:
+            self.ids = f.read().splitlines()
+
+        if mode == 'train_l' and nsample is not None and nsample > len(self.ids):
+            self.ids *= math.ceil(nsample / len(self.ids))
+            self.ids = self.ids[:nsample]
 
     def __getitem__(self, item):
-        id = self.ids[item]
-        img_filename = id.split(' ')[0]
+        item_id = self.ids[item]
+        split_item = item_id.split(' ')
+        img_filename = os.path.join(self.root, split_item[0])
 
-        if img_filename.endswith('None'):
-            img = Image.fromarray(np.zeros((self.size, self.size), dtype=np.uint8))
-        elif img_filename.endswith('.npy'):
-            img = Image.fromarray(np.load(os.path.join(self.root, img_filename)))
+        if img_filename.endswith('.npy'):
+            img = Image.fromarray(np.load(img_filename)).convert('RGB')
         else:
-            img = Image.open(os.path.join(self.root_directory, self.root, img_filename)).convert('RGB')
+            img = Image.open(img_filename).convert('RGB')
 
         if self.mode == 'train_u':
-            mask = Image.fromarray(np.zeros((img.size[1], img.size[0]), dtype=np.uint8))
+            mask_npy = np.zeros((img.size[1], img.size[0]), dtype=np.uint8)
         else:
-            mask_filename = id.split(' ')[1]
+            mask_filename = os.path.join(self.root, split_item[1])
 
-            if img_filename.endswith('None'):
-                mask = Image.fromarray(np.zeros((600, 600), dtype=np.uint8))
-            elif img_filename.endswith('.npy'):
-                img = Image.fromarray(np.load(os.path.join(self.root, img_filename)))
+            if mask_filename is None or mask_filename.endswith("None"):
+                mask_npy = np.zeros((img.size[1], img.size[0]), dtype=np.uint8)
+            elif mask_filename.endswith('.npy'):
+                mask_npy = np.load(mask_filename)
             else:
-                mask = Image.fromarray(np.array(Image.open(os.path.join(self.root_directory, self.root, mask_filename))))
+                mask_npy = np.array(Image.open(mask_filename))
 
-        if self.mode == 'val':
+            if mask_npy.ndim > 2:
+                mask_npy = np.max(mask_npy, axis=-1)
+
+            max_value = np.max(mask_npy)
+
+            if self.mode == 'val_hi' or self.mode == 'test_hi' or self.mode == 'train_l_hi':
+                mask_npy = mask_npy == max_value
+            elif self.mode == 'train_l_hi' or self.mode == 'train_l_lo':
+                mask_npy = mask_npy > 0
+
+        mask_npy = mask_npy.astype(np.uint8)
+        mask = Image.fromarray((mask_npy > 0).astype(np.uint8))
+        max_mask = np.max(mask)
+        assert (max_mask in [0, 1])
+
+        if self.mode.startswith('val') or self.mode.startswith('test'):
             img, mask = normalize(img, mask)
-            return img, mask, id
+            return img, mask, item_id
 
         img, mask = resize(img, mask, (0.5, 2.0))
-        ignore_value = 254 if self.mode == 'train_u' else 255
-        img, mask = crop(img, mask, self.size, ignore_value)
+        img, mask = crop(img, mask, self.size, 255)
         img, mask = hflip(img, mask, p=0.5)
 
         if self.mode == 'train_l':
@@ -70,89 +80,25 @@ class SemiIjmondDataset(Dataset):
 
         if random.random() < 0.8:
             img_s1 = transforms.ColorJitter(0.5, 0.5, 0.5, 0.25)(img_s1)
+
         img_s1 = transforms.RandomGrayscale(p=0.2)(img_s1)
         img_s1 = blur(img_s1, p=0.5)
         cutmix_box1 = obtain_cutmix_box(img_s1.size[0], p=0.5)
 
         if random.random() < 0.8:
             img_s2 = transforms.ColorJitter(0.5, 0.5, 0.5, 0.25)(img_s2)
+
         img_s2 = transforms.RandomGrayscale(p=0.2)(img_s2)
         img_s2 = blur(img_s2, p=0.5)
         cutmix_box2 = obtain_cutmix_box(img_s2.size[0], p=0.5)
-
         ignore_mask = Image.fromarray(np.zeros((mask.size[1], mask.size[0])))
-
+        ignore_mask = torch.from_numpy(np.array(ignore_mask)).long()
         img_s1, ignore_mask = normalize(img_s1, ignore_mask)
         img_s2 = normalize(img_s2)
-
         mask = torch.from_numpy(np.array(mask)).long()
-        ignore_mask[mask == 254] = 255
+        ignore_mask[mask == 255] = 255
 
         return normalize(img_w), img_s1, img_s2, ignore_mask, cutmix_box1, cutmix_box2
 
     def __len__(self):
         return len(self.ids)
-
-# class SemiDataset(Dataset):
-#     def __init__(self, name, root, mode, size=None, id_path=None, nsample=None):
-#         self.name = name
-#         self.root = root
-#         self.mode = mode
-#         self.size = size
-#
-#         if mode == 'train_l' or mode == 'train_u':
-#             with open(id_path, 'r') as f:
-#                 self.ids = f.read().splitlines()
-#             if mode == 'train_l' and nsample is not None and nsample > len(self.ids):
-#                 self.ids *= math.ceil(nsample / len(self.ids))
-#                 self.ids = self.ids[:nsample]
-#         else:
-#             with open('splits/%s/val.txt' % name, 'r') as f:
-#                 self.ids = f.read().splitlines()
-#
-#     def __getitem__(self, item):
-#         id = self.ids[item]
-#         img = Image.open(os.path.join(self.root, id.split(' ')[0])).convert('RGB')
-#         if self.mode == 'train_u':
-#             mask = Image.fromarray(np.zeros((img.size[1], img.size[0]), dtype=np.uint8))
-#         else:
-#             mask = Image.fromarray(np.array(Image.open(os.path.join(self.root, id.split(' ')[1]))))
-#
-#         if self.mode == 'val':
-#             img, mask = normalize(img, mask)
-#             return img, mask, id
-#
-#         img, mask = resize(img, mask, (0.5, 2.0))
-#         ignore_value = 254 if self.mode == 'train_u' else 255
-#         img, mask = crop(img, mask, self.size, ignore_value)
-#         img, mask = hflip(img, mask, p=0.5)
-#
-#         if self.mode == 'train_l':
-#             return normalize(img, mask)
-#
-#         img_w, img_s1, img_s2 = deepcopy(img), deepcopy(img), deepcopy(img)
-#
-#         if random.random() < 0.8:
-#             img_s1 = transforms.ColorJitter(0.5, 0.5, 0.5, 0.25)(img_s1)
-#         img_s1 = transforms.RandomGrayscale(p=0.2)(img_s1)
-#         img_s1 = blur(img_s1, p=0.5)
-#         cutmix_box1 = obtain_cutmix_box(img_s1.size[0], p=0.5)
-#
-#         if random.random() < 0.8:
-#             img_s2 = transforms.ColorJitter(0.5, 0.5, 0.5, 0.25)(img_s2)
-#         img_s2 = transforms.RandomGrayscale(p=0.2)(img_s2)
-#         img_s2 = blur(img_s2, p=0.5)
-#         cutmix_box2 = obtain_cutmix_box(img_s2.size[0], p=0.5)
-#
-#         ignore_mask = Image.fromarray(np.zeros((mask.size[1], mask.size[0])))
-#
-#         img_s1, ignore_mask = normalize(img_s1, ignore_mask)
-#         img_s2 = normalize(img_s2)
-#
-#         mask = torch.from_numpy(np.array(mask)).long()
-#         ignore_mask[mask == 254] = 255
-#
-#         return normalize(img_w), img_s1, img_s2, ignore_mask, cutmix_box1, cutmix_box2
-#
-#     def __len__(self):
-#         return len(self.ids)

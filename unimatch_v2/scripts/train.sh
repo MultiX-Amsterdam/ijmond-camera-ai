@@ -1,50 +1,47 @@
 #!/bin/bash
 
-# modify these augments if you want to try other datasets, splits or methods
-# dataset: ['pascal', 'cityscapes', 'ade20k', 'coco']
-# method: ['unimatch_v2', 'fixmatch', 'supervised']
+# modify these arguments if you want to try other splits or methods
+# method: ['unimatch_v2', 'supervised', 'test_model']
 # exp: just for specifying the 'save_path'
-# split: ['92', '1_16', ...]. Please check directory './splits/$dataset' for concrete splits
-method='unimatch_v2'
-exp='dinov2_small'
-split='smoke5k'
+# model: ['m-zeroshot', 'm-citizien', ...]. Please check directory './splits' for available model splits
 
-config=configs/${split}.yaml
-labeled_id_path=splits/$split/train/labeled.txt
-unlabeled_id_path=splits/$split/train/unlabeled.txt
-save_path=exp/$method/$exp/$split
+model='m-mix-20'
+method='model_test'
+exp='dinov2_small'
+unlabeled_sample_size=1500
+unlabeled_sample_seed=23838742
+
+training_config=splits/$model.yaml
+save_path=exp/$exp/$model
 
 mkdir -p $save_path
 
 # Parse arguments
-NUM_GPUS=$1
+NUM_GPUS=${1:-1}
 PORT=${2:-9271}
 LAUNCHER=${3:-"torch.distributed.launch"}  # torchrun or torch_distributed_launch
 NNODES=${4:-1}
 RANK=${5:-0}
 MASTER_ADDR=${6:-"localhost"}
 
-echo "=== Distributed Training Configuration ==="
-echo "Launcher: $LAUNCHER"
-echo "Number of nodes: $NNODES"
-echo "Number of GPUs per node: $NUM_GPUS"
-echo "Total GPUs: $((NNODES * NUM_GPUS))"
-echo "Master address: $MASTER_ADDR"
-echo "Master port: $PORT"
-echo "Node rank: $RANK"
-echo "=========================================="
-
-
+## For distributed launch (multiple GPUs) uncomment the following lines and comment out single GPU launch
 
 #python -m $LAUNCHER \
-#    --nproc_per_node=$1 \
+#    --nproc_per_node=$NUM_GPUS \
 #    --master_addr=$MASTER_ADDR \
-#    --master_port=$2 \
+#    --master_port=$PORT \
 #    $method.py \
-#    --config=$config --labeled-id-path $labeled_id_path --unlabeled-id-path $unlabeled_id_path \
-#    --save-path $save_path --port $2 2>&1 | tee $save_path/out.log
+#    --training-config $training_config \
+#    --save-path $save_path
+#    --port $PORT
+#    --unlabeled-sample-size $unlabeled_sample_size \
+#    --unlabeled-sample-seed $unlabeled_sample_seed 2>&1 | tee $save_path/out.log
 
-python \
-    $method.py \
-    --config=$config --labeled-id-path $labeled_id_path --unlabeled-id-path $unlabeled_id_path \
-    --save-path $save_path --port $2 2>&1 | tee $save_path/out.log
+## Single GPU launch
+
+python $method.py \
+    --training-config $training_config \
+    --save-path $save_path \
+    --port $PORT \
+    --unlabeled-sample-size $unlabeled_sample_size \
+    --unlabeled-sample-seed $unlabeled_sample_seed 2>&1 | tee $save_path/out.log

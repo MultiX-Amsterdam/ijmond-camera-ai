@@ -1,25 +1,32 @@
 #!/bin/bash
-job='pascal_unimatch_v2_dinov2_small_366'
 
-# modify these augments if you want to try other datasets, splits or methods
-# dataset: ['pascal', 'cityscapes', 'ade20k', 'coco']
-# method: ['unimatch_v2', 'fixmatch', 'supervised']
+job='m_mix_20_unimatch_v2_dinov2_small_1500_23838742'
+
+# modify these arguments if you want to try other splits or methods
+# method: ['unimatch_v2', 'supervised', 'test_model']
 # exp: just for specifying the 'save_path'
-# split: ['92', '1_16', ...]. Please check directory './splits/$dataset' for concrete splits
-dataset='pascal'
+# model: ['m-zeroshot', 'm-citizien', ...]. Please check directory './splits' for available model splits
+
+model='m-mix-20'
 method='unimatch_v2'
 exp='dinov2_small'
-split='366'
+unlabeled_sample_size=1500
+unlabeled_sample_seed=23838742
 
-config=configs/${dataset}.yaml
-labeled_id_path=splits/$dataset/$split/labeled.txt
-unlabeled_id_path=splits/$dataset/$split/unlabeled.txt
-save_path=exp/$dataset/$method/$exp/$split
+training_config=splits/$model.yaml
+save_path=exp/$exp/$model
 
 mkdir -p $save_path
 
-srun --mpi=pmi2 -p $3 -n $1 --gres=gpu:$1 --ntasks-per-node=$1 --job-name=$job
-    --open-mode=append -o $save_path/out.log --quotatype=reserved \
-    python3 -u $method.py \
-    --config=$config --labeled-id-path $labeled_id_path --unlabeled-id-path $unlabeled_id_path \
-    --save-path $save_path --port $2
+srun --mpi=pmi2 -p $3 -n $1 \
+     --gres=gpu:$1 \
+     --ntasks-per-node=$1 \
+     --job-name=$job \
+     --open-mode=append -o $save_path/out.log \
+     --quotatype=reserved \
+     python3 -u $method.py \
+     --training-config $training_config \
+     --save-path $save_path \
+     --port $PORT \
+     --unlabeled-sample-size $unlabeled_sample_size \
+     --unlabeled-sample-seed $unlabeled_sample_seed
