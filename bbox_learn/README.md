@@ -31,6 +31,12 @@ python smoke_dataset.py dataset/smoke5k/test/test.txt dataset/smoke5k/test/ smok
 
 ### Create IJmond pseudo masks based on the bounding boxes
 
+We use Segment Anything (SAM) to create the pseudo masks. Before doing this, run the following on the terminal to install SAM. You need to be in the `bbox_learn` directory.
+```sh
+pip install git+https://github.com/facebookresearch/segment-anything.git
+wget -P https://dl.fbaipublicfiles.com/segment_anything/sam_vit_l_0b3195.pth
+```
+
 Create pseudo masks and metadata txt files (one with masks, one without masks) using the IJmond bounding boxes and save the masks in the `dataset/ijmond_pseudo_masks/` path. This will create `debug_plot_pseudo_masks.png` file for debugging.
 ```sh
 python create_pseudo_masks.py dataset/ijmond_bbox/filtered_bbox_labels_1_aug_2025.json dataset/ijmond_bbox/img_npy/
@@ -102,11 +108,6 @@ So, after that, the file structure should look like below:
         └── _annotations.coco.json # the annotation file
 ```
 
-Then, you can check if the cropped IJmond segmentation dataset can be loaded. This will create the `debug_plot_ijmond_seg_cropped_with_mask.png` and `debug_plot_ijmond_seg_cropped_with_mask_transformed.png` files for debugging.
-```sh
-python smoke_dataset.py dataset/ijmond_seg/test/cropped/test_with_mask.txt dataset/ijmond_seg/test/cropped/ ijmond_seg_cropped_with_mask
-```
-
 Finally, split the IJmond dataset into training, validation, and test sets. Check the documentation in the `split_ijmond_seg.py` file to understand how we split the data.
 ```sh
 python split_ijmond_seg.py
@@ -154,6 +155,11 @@ Below is the explaination for split by timestamp:
     └── metadata.json # the coverage of camera views and dates for each txt file
 ```
 
+You can check if the cropped IJmond segmentation dataset can be loaded. This will create the `debug_plot_ijmond_seg_cropped_train_with_mask_20.png` and `debug_plot_ijmond_seg_cropped_train_with_mask_20_transformed.png` files for debugging.
+```sh
+python smoke_dataset.py dataset/ijmond_seg/test/cropped/splits/split_by_timestamp/train/20_with_masks.txt ijmond_seg_cropped_train_with_mask_20
+```
+
 ## Experiment Settings
 
 For experiments, all models should first load the large-scale pretrained weights (e.g., DINOv2), which depends on the model implementation. In this experiment, we use UniMatch-V2. Then, all models should first be pretrained again using the `smoke5k` dataset to simulate the situation that we have some prior model in a similar problem domain (smoke segmentaion) to begin with. We call this the `Smoke5K-pretrained-UniMatch-V2` model.
@@ -163,6 +169,10 @@ Then, depending on the research question, we finetune the model (or not) based o
 ### The 10% negative samples rule
 
 During the finetuning stage, we always use the full set of images with masks (i.e., positive samples) and then combine it with some randomly selected negative samples (10% of the batch size) from the set without masks. For example, if we are using 100% of the training data, and the batch size is 40 when looping the dataloader of the `100_with_masks.txt` file, we will randomly pick 4 negative samples (10% of the batch size) from `100_without_masks.txt` and add these negative samples to the batch when performing one batch gradient descent step. Same thing applies for the `ijmond_pseudo_masks` dataset, which has `train_with_mask.txt` and `train_without_mask.txt`. The reason of doing this (not using too many negative samples) is because we do not want the model to just predict `no smoke` for all the pixels to get a low loss during training.
+
+### The unlabeled data sampling rule
+
+When using unlabeled data, we randomly sample a set of unlabeled images during training for each iteraton (i.e., each batch gradient descent step) to reduce the computation time. The number of unlabeled images is the same as labeled images, which is the same implementation as in the [UniMatchV2 paper](https://arxiv.org/abs/2410.10777).
 
 ### Datasets
 
@@ -266,10 +276,7 @@ To reflect our design philosophy that we care more about postive images, we weig
 The following code is the implementation of the evaluation metrics. It is written in PyTorch syntax but may need adjustment for being used in the experiment pipeline. For model selection during validation, use only `mF2` and `mIoU`. First, pick several candidates (with different training epoch checkpoints) that have a good level of `mIoU`. Then, pick the one with the highest `mF2` from the candidates. This two stage filtering is designed to make sure that the model have a good mask quality and also a good recall (with also a small consideration of precision). For getting the final performance, report all the metrics that are returned from the function.
 
 ```python
-import numpy as np
-import torch
-
-def evaluation(model, dataloader, device, w_pos=0.8, w_neg=0.2, threshold=0.5):
+def evaluate_new(model, dataloader, w_pos=0.8, w_neg=0.2, threshold=0.5, multiplier=None):
     """
     Calculates weighted mIoU, mF2, mRecall, and mPrecision.
     """
@@ -278,14 +285,48 @@ def evaluation(model, dataloader, device, w_pos=0.8, w_neg=0.2, threshold=0.5):
     # Grouped storage for per-image metrics
     smoke_f2s, smoke_ious, smoke_recalls, smoke_precisions = [], [], [], []
     clear_f2s, clear_ious, clear_recalls, clear_precisions = [], [], [], []
+    smoke_accu, clear_accu = [], []
 
     smooth = 1e-7
 
     with torch.no_grad():
-        for images, masks in dataloader:
-            images, masks = images.to(device), masks.to(device)
+        for images, masks, _ in dataloader:
+            images, masks = images.cuda(), masks.cuda()
+
+            if multiplier is not None:
+                ori_h, ori_w = images.shape[-2:]
+                if multiplier == 512:
+                    new_h, new_w = 512, 512
+                else:
+                    new_h, new_w = int(ori_h / multiplier + 0.5) * multiplier, int(ori_w / multiplier + 0.5) * multiplier
+
+                images = F.interpolate(images, (new_h, new_w), mode='bilinear', align_corners=True)
+
             outputs = model(images)
+
+
+
+            if multiplier is not None:
+                outputs = F.interpolate(outputs, (ori_h, ori_w), mode='bilinear', align_corners=True)
+
             preds = (outputs > threshold).float()
+            preds = preds.argmax(dim = 1)
+
+            intersection, union, target = \
+                intersectionAndUnion(preds.cpu().numpy(), masks.cpu().numpy(), 2, 255)
+
+            # --- CASE 1: NEGATIVE SAMPLE (Ground Truth is Empty) ---
+            if masks.cpu().sum() == 0:
+                score = 1.0 if preds.cpu().sum() == 0 else 0.0
+                clear_ious.append(score)
+                correct_pixels = (preds.cpu() == masks.cpu()).sum().item()
+                clear_accu.append(correct_pixels / preds.numel())
+            # --- CASE 2: POSITIVE SAMPLE (Smoke Present) ---
+            else:
+                iou_class = (intersection[1].sum() + smooth) / (union[1].sum() + smooth)
+                smoke_ious.append(iou_class)
+                correct_pixels = (preds.cpu() == masks.cpu()).sum().item()
+                smoke_accu.append(correct_pixels / preds.numel())
 
             for p, m in zip(preds, masks):
                 # Pixel-level components
@@ -301,18 +342,13 @@ def evaluation(model, dataloader, device, w_pos=0.8, w_neg=0.2, threshold=0.5):
                 if m.sum() == 0:
                     score = 1.0 if p.sum() == 0 else 0.0
                     clear_f2s.append(score)
-                    clear_ious.append(score)
                     clear_recalls.append(score)
                     clear_precisions.append(score)
 
                 # --- CASE 2: POSITIVE SAMPLE (Smoke Present) ---
                 else:
-                    # IoU
-                    iou = (tp + smooth) / (union + smooth)
-                    smoke_ious.append(iou)
-
                     # F2 Score
-                    f2 = (5 * precision * recall) / (4 * precision + recall + smooth)
+                    f2 = (5 * precision * recall) / ( 4 * precision + recall + smooth)
                     smoke_f2s.append(f2)
 
                     # Recall and Precision
@@ -324,23 +360,33 @@ def evaluation(model, dataloader, device, w_pos=0.8, w_neg=0.2, threshold=0.5):
     mIoU_smoke = np.mean(smoke_ious) if smoke_ious else 0.0
     mRec_smoke = np.mean(smoke_recalls) if smoke_recalls else 0.0
     mPre_smoke = np.mean(smoke_precisions) if smoke_precisions else 0.0
+    mAccu_smoke = np.mean(smoke_accu) if smoke_accu else 0.0
 
     mF2_clear = np.mean(clear_f2s) if clear_f2s else 0.0
     mIoU_clear = np.mean(clear_ious) if clear_ious else 0.0
     mRec_clear = np.mean(clear_recalls) if clear_recalls else 0.0
     mPre_clear = np.mean(clear_precisions) if clear_precisions else 0.0
+    mAccu_clear = np.mean(clear_accu) if clear_accu else 0.0
 
     # 2. Compute Weighted Final Metrics (The ones used for ranking)
     weight_sum = w_pos + w_neg
+
     results = {
         "mIoU": (w_pos * mIoU_smoke + w_neg * mIoU_clear) / weight_sum,
         "mF2":  (w_pos * mF2_smoke + w_neg * mF2_clear) / weight_sum,
         "mRec": (w_pos * mRec_smoke + w_neg * mRec_clear) / weight_sum,
         "mPre": (w_pos * mPre_smoke + w_neg * mPre_clear) / weight_sum,
+        "mAccu": (w_pos * mAccu_smoke + w_neg * mAccu_clear) / weight_sum,
         "mF2_smoke": mF2_smoke,
         "mIoU_smoke": mIoU_smoke,
         "mRec_smoke": mRec_smoke,
         "mPre_smoke": mPre_smoke,
+        "mAccu_smoke": mAccu_smoke,
+        "mF2_clear": mF2_clear,
+        "mIoU_clear": mIoU_clear,
+        "mRec_clear": mRec_clear,
+        "mPre_clear": mPre_clear,
+        "mAccu_clear": mAccu_clear
     }
 
     return results
