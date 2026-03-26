@@ -15,7 +15,7 @@ import yaml
 
 from dataset.semi import SemiSmokeDataset
 from model.semseg.dpt import DPT
-from supervised import evaluate, evaluate_new
+from supervised import evaluate_new
 from util.utils import count_params, init_log, AverageMeter
 from util.dist_helper import setup_distributed
 
@@ -143,7 +143,8 @@ def main():
         cfg['data_root'],
         'train_u',
         cfg['crop_size'],
-        training_cfg['unlabeled_dataset']
+        base_size=cfg.get('base_size'),
+        id_path=training_cfg['unlabeled_dataset']
     )
 
     current_nsample = len(trainset_u)
@@ -187,7 +188,8 @@ def main():
         cfg['data_root'],
         'train_l',
         cfg['crop_size'],
-        training_cfg['smoke_dataset'],
+        base_size=cfg.get('base_size'),
+        id_path=training_cfg['smoke_dataset'],
         nsample=current_nsample
     )
 
@@ -207,7 +209,8 @@ def main():
         cfg['data_root'],
         'train_l',
         cfg['crop_size'],
-        training_cfg['clear_dataset'],
+        base_size=cfg.get('base_size'),
+        id_path=training_cfg['clear_dataset'],
         nsample=current_nsample
     )
 

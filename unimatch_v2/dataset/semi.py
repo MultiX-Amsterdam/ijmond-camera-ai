@@ -14,11 +14,12 @@ from torchvision import transforms
 
 
 class SemiSmokeDataset(Dataset):
-    def __init__(self, name, root, mode, size=None, id_path=None, nsample=None):
+    def __init__(self, name, root, mode, size=None, base_size=None, id_path=None, nsample=None):
         self.name = name
         self.root = root
         self.mode = mode
         self.size = size
+        self.base_size = base_size
         self.data = os.path.join(root, id_path)
 
         with open(self.data, 'r') as f:
@@ -69,6 +70,8 @@ class SemiSmokeDataset(Dataset):
             img, mask = normalize(img, mask)
             return img, mask, item_id
 
+        if self.base_size is not None:
+            img, mask = rescale(img, mask, self.base_size)
         img, mask = resize(img, mask, (0.5, 2.0))
         img, mask = crop(img, mask, self.size, 255)
         img, mask = hflip(img, mask, p=0.5)

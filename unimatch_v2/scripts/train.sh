@@ -3,10 +3,10 @@
 # modify these arguments if you want to try other splits or methods
 # method: ['unimatch_v2', 'supervised', 'test_model']
 # exp: just for specifying the 'save_path'
-# model: ['m-zeroshot', 'm-citizien', ...]. Please check directory './splits' for available model splits
+# model: ['m-zeroshot', 'm-citizen', ...]. Please check directory './splits' for available model splits
 
 model='m-mix-20'
-method='model_test'
+method='test_model'
 exp='dinov2_small'
 unlabeled_sample_size=1500
 unlabeled_sample_seed=23838742

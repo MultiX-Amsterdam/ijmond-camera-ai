@@ -29,7 +29,7 @@ parser.add_argument('--port', default=None, type=int)
 parser.add_argument('--unlabeled-sample-size', type=int, required=False)
 parser.add_argument('--unlabeled-sample-seed', type=int, required=False)
 
-
+"""
 def evaluate(model, loader, cfg, multiplier=None):
     model.eval()
     intersection_meter = AverageMeter()
@@ -46,8 +46,14 @@ def evaluate(model, loader, cfg, multiplier=None):
                 if multiplier == 512:
                     new_h, new_w = 512, 512
                 else:
-                    new_h, new_w = int(ori_h / multiplier + 0.5) * multiplier, int(
-                        ori_w / multiplier + 0.5) * multiplier
+                    new_h = int(ori_h / multiplier + 0.5) * multiplier
+                    new_w = int(ori_w / multiplier + 0.5) * multiplier
+                    max_dim = 400
+                    if max(new_h, new_w) > max_dim:
+                        scale = max_dim / max(new_h, new_w)
+                        new_h = max(int(ori_h * scale / multiplier + 0.5) * multiplier, multiplier)
+                        new_w = max(int(ori_w * scale / multiplier + 0.5) * multiplier, multiplier)
+                    logger.info(f"Original size: ({ori_h}, {ori_w}), Resized size: ({new_h}, {new_w})")
                 img = F.interpolate(img, (new_h, new_w), mode='bilinear', align_corners=True)
 
             pred = model(img)
@@ -78,7 +84,7 @@ def evaluate(model, loader, cfg, multiplier=None):
     overall_acc = correct_pixel.sum / (total_pixel.sum + 1e-10) * 100.0
 
     return mIOU, iou_class, overall_acc
-
+"""
 
 def evaluate_new(model, dataloader, w_pos=0.8, w_neg=0.2, threshold=0.5, multiplier=None):
     """
@@ -102,8 +108,13 @@ def evaluate_new(model, dataloader, w_pos=0.8, w_neg=0.2, threshold=0.5, multipl
                 if multiplier == 512:
                     new_h, new_w = 512, 512
                 else:
-                    new_h, new_w = int(ori_h / multiplier + 0.5) * multiplier, int(
-                        ori_w / multiplier + 0.5) * multiplier
+                    new_h = int(ori_h / multiplier + 0.5) * multiplier
+                    new_w = int(ori_w / multiplier + 0.5) * multiplier
+                    max_dim = 400
+                    if max(new_h, new_w) > max_dim:
+                        scale = max_dim / max(new_h, new_w)
+                        new_h = max(int(ori_h * scale / multiplier + 0.5) * multiplier, multiplier)
+                        new_w = max(int(ori_w * scale / multiplier + 0.5) * multiplier, multiplier)
 
                 images = F.interpolate(images, (new_h, new_w), mode='bilinear', align_corners=True)
 
@@ -118,12 +129,10 @@ def evaluate_new(model, dataloader, w_pos=0.8, w_neg=0.2, threshold=0.5, multipl
             intersection, union, target = \
                 intersectionAndUnion(preds.cpu().numpy(), masks.cpu().numpy(), 2, 255)
 
-            # --- CASE 1: NEGATIVE SAMPLE (Ground Truth is Empty) ---
+            # --- CASE 1: NEGATIVE SAMPLE (No Smoke Present) ---
             if masks.cpu().sum() == 0:
                 clear_iou = (intersection[0].sum() + smooth) / (union[0].sum() + smooth)
                 clear_ious.append(clear_iou)
-                # score = 1.0 if preds.cpu().sum() == 0 else 0.0
-                # clear_ious.append(score)
                 correct_pixels = (preds.cpu() == masks.cpu()).sum().item()
                 clear_accu.append(correct_pixels / preds.numel())
             # --- CASE 2: POSITIVE SAMPLE (Smoke Present) ---
@@ -143,7 +152,7 @@ def evaluate_new(model, dataloader, w_pos=0.8, w_neg=0.2, threshold=0.5, multipl
                 precision = (tp + smooth) / (tp + fp + smooth)
                 recall = (tp + smooth) / (tp + fn + smooth)
 
-                # --- CASE 1: NEGATIVE SAMPLE (Ground Truth is Empty) ---
+                # --- CASE 1: NEGATIVE SAMPLE (No Smoke Present) ---
                 if m.sum() == 0:
                     score = 1.0 if p.sum() == 0 else 0.0
                     clear_f2s.append(score)
@@ -155,8 +164,6 @@ def evaluate_new(model, dataloader, w_pos=0.8, w_neg=0.2, threshold=0.5, multipl
                     # F2 Score
                     f2 = (5 * precision * recall) / (4 * precision + recall + smooth)
                     smoke_f2s.append(f2)
-
-                    # Recall and Precision
                     smoke_recalls.append(recall)
                     smoke_precisions.append(precision)
 
@@ -209,7 +216,6 @@ def main():
     logger = init_log('global', logging.INFO)
     logger.propagate = 0
     rank, world_size = setup_distributed(port=args.port)
-    cfg['batch_size'] *= 2
 
     if rank == 0:
         all_args = {**cfg, **vars(args), 'ngpus': world_size}
@@ -284,7 +290,8 @@ def main():
         cfg['data_root'],
         'train_l',
         cfg['crop_size'],
-        training_cfg['smoke_dataset'],
+        base_size=cfg.get('base_size'),
+        id_path=training_cfg['smoke_dataset'],
         nsample=None
     )
 

@@ -56,6 +56,19 @@ def resize(img, mask, ratio_range):
     return img, mask
 
 
+def rescale(img, mask, base_size):
+    w, h = img.size
+    if h > w:
+        oh = base_size
+        ow = int(1.0 * w * base_size / h + 0.5)
+    else:
+        ow = base_size
+        oh = int(1.0 * h * base_size / w + 0.5)
+    img = img.resize((ow, oh), Image.BILINEAR)
+    mask = mask.resize((ow, oh), Image.NEAREST)
+    return img, mask
+
+
 def blur(img, p=0.5):
     if random.random() < p:
         sigma = np.random.uniform(0.1, 2.0)
