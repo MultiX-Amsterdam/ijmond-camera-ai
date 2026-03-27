@@ -86,16 +86,20 @@ def evaluate(model, loader, cfg, multiplier=None):
     return mIOU, iou_class, overall_acc
 """
 
-def evaluate_new(model, dataloader, w_pos=0.8, w_neg=0.2, threshold=0.5, multiplier=None):
+def evaluate_new(model, dataloader, multiplier=None):
     """
-    Calculates weighted mIoU, mF2, mRecall, and mPrecision.
+    Calculates smoke-class global IoU, F1 score, and pixel accuracy.
+
+    Metrics are computed globally by accumulating TP/FP/FN across all images,
+    focusing solely on smoke pixel detection (class 1).
     """
     model.eval()
 
-    # Grouped storage for per-image metrics
-    smoke_f2s, smoke_ious, smoke_recalls, smoke_precisions = [], [], [], []
-    clear_f2s, clear_ious, clear_recalls, clear_precisions = [], [], [], []
-    smoke_accu, clear_accu = [], []
+    total_tp = 0
+    total_fp = 0
+    total_fn = 0
+    total_correct = 0
+    total_pixels = 0
 
     smooth = 1e-7
 
@@ -105,17 +109,13 @@ def evaluate_new(model, dataloader, w_pos=0.8, w_neg=0.2, threshold=0.5, multipl
 
             if multiplier is not None:
                 ori_h, ori_w = images.shape[-2:]
-                if multiplier == 512:
-                    new_h, new_w = 512, 512
-                else:
-                    new_h = int(ori_h / multiplier + 0.5) * multiplier
-                    new_w = int(ori_w / multiplier + 0.5) * multiplier
-                    max_dim = 400
-                    if max(new_h, new_w) > max_dim:
-                        scale = max_dim / max(new_h, new_w)
-                        new_h = max(int(ori_h * scale / multiplier + 0.5) * multiplier, multiplier)
-                        new_w = max(int(ori_w * scale / multiplier + 0.5) * multiplier, multiplier)
-
+                new_h = int(ori_h / multiplier + 0.5) * multiplier
+                new_w = int(ori_w / multiplier + 0.5) * multiplier
+                max_dim = 400
+                if max(new_h, new_w) > max_dim:
+                    scale = max_dim / max(new_h, new_w)
+                    new_h = max(int(ori_h * scale / multiplier + 0.5) * multiplier, multiplier)
+                    new_w = max(int(ori_w * scale / multiplier + 0.5) * multiplier, multiplier)
                 images = F.interpolate(images, (new_h, new_w), mode='bilinear', align_corners=True)
 
             outputs = model(images)
@@ -123,82 +123,30 @@ def evaluate_new(model, dataloader, w_pos=0.8, w_neg=0.2, threshold=0.5, multipl
             if multiplier is not None:
                 outputs = F.interpolate(outputs, (ori_h, ori_w), mode='bilinear', align_corners=True)
 
-            preds = (outputs > threshold).float()
-            preds = preds.argmax(dim=1)
+            preds = outputs.argmax(dim=1)
 
-            for p, m in zip(preds, masks):
-                p_np = p.cpu().numpy()
-                m_np = m.cpu().numpy()
+            smoke_pred = preds == 1
+            smoke_gt = masks == 1
 
-                intersection, union_arr, _ = intersectionAndUnion(p_np[None], m_np[None], 2, 255)
+            total_tp += (smoke_pred & smoke_gt).sum().item()
+            total_fp += (smoke_pred & ~smoke_gt).sum().item()
+            total_fn += (~smoke_pred & smoke_gt).sum().item()
+            total_correct += (preds == masks).sum().item()
+            total_pixels += masks.numel()
 
-                # Pixel-level components
-                tp = (p * m).sum().item()
-                fp = (p * (1 - m)).sum().item()
-                fn = ((1 - p) * m).sum().item()
-                union = p.sum().item() + m.sum().item() - tp
+    iou = (total_tp + smooth) / (total_tp + total_fp + total_fn + smooth)
+    precision = (total_tp + smooth) / (total_tp + total_fp + smooth)
+    recall = (total_tp + smooth) / (total_tp + total_fn + smooth)
+    f1 = (2 * precision * recall) / (precision + recall + smooth)
+    accuracy = total_correct / max(total_pixels, 1)
 
-                precision = (tp + smooth) / (tp + fp + smooth)
-                recall = (tp + smooth) / (tp + fn + smooth)
-
-                # --- CASE 1: NEGATIVE SAMPLE (No Smoke Present) ---
-                if m.sum() == 0:
-                    clear_iou = (intersection[0].sum() + smooth) / (union_arr[0].sum() + smooth)
-                    clear_ious.append(clear_iou)
-                    clear_accu.append((p_np == m_np).sum() / p_np.size)
-
-                    score = 1.0 if p.sum() == 0 else 0.0
-                    clear_f2s.append(score)
-                    clear_recalls.append(score)
-                    clear_precisions.append(score)
-
-                # --- CASE 2: POSITIVE SAMPLE (Smoke Present) ---
-                else:
-                    smoke_iou = (intersection[1].sum() + smooth) / (union_arr[1].sum() + smooth)
-                    smoke_ious.append(smoke_iou)
-                    smoke_accu.append((p_np == m_np).sum() / p_np.size)
-
-                    # F2 Score
-                    f2 = (5 * precision * recall) / (4 * precision + recall + smooth)
-                    smoke_f2s.append(f2)
-                    smoke_recalls.append(recall)
-                    smoke_precisions.append(precision)
-
-    # 1. Calculate the raw means for both groups
-    mF2_smoke = np.mean(smoke_f2s) if smoke_f2s else 0.0
-    mIoU_smoke = np.mean(smoke_ious) if smoke_ious else 0.0
-    mRec_smoke = np.mean(smoke_recalls) if smoke_recalls else 0.0
-    mPre_smoke = np.mean(smoke_precisions) if smoke_precisions else 0.0
-    mAccu_smoke = np.mean(smoke_accu) if smoke_accu else 0.0
-
-    mF2_clear = np.mean(clear_f2s) if clear_f2s else 0.0
-    mIoU_clear = np.mean(clear_ious) if clear_ious else 0.0
-    mRec_clear = np.mean(clear_recalls) if clear_recalls else 0.0
-    mPre_clear = np.mean(clear_precisions) if clear_precisions else 0.0
-    mAccu_clear = np.mean(clear_accu) if clear_accu else 0.0
-
-    # 2. Compute Weighted Final Metrics (The ones used for ranking)
-    weight_sum = w_pos + w_neg
-
-    results = {
-        "mIoU": (w_pos * mIoU_smoke + w_neg * mIoU_clear) / weight_sum,
-        "mF2": (w_pos * mF2_smoke + w_neg * mF2_clear) / weight_sum,
-        "mRec": (w_pos * mRec_smoke + w_neg * mRec_clear) / weight_sum,
-        "mPre": (w_pos * mPre_smoke + w_neg * mPre_clear) / weight_sum,
-        "mAccu": (w_pos * mAccu_smoke + w_neg * mAccu_clear) / weight_sum,
-        "mF2_smoke": mF2_smoke,
-        "mIoU_smoke": mIoU_smoke,
-        "mRec_smoke": mRec_smoke,
-        "mPre_smoke": mPre_smoke,
-        "mAccu_smoke": mAccu_smoke,
-        "mF2_clear": mF2_clear,
-        "mIoU_clear": mIoU_clear,
-        "mRec_clear": mRec_clear,
-        "mPre_clear": mPre_clear,
-        "mAccu_clear": mAccu_clear
+    return {
+        "gIoU": iou,
+        "gF1": f1,
+        "gPre": precision,
+        "gRec": recall,
+        "gAccu": accuracy,
     }
-
-    return results
 
 
 def main():
@@ -323,7 +271,7 @@ def main():
     best_evaluations = {}
     best_epoch = -1
     best_iou = 0.0
-    best_f2 = 0.0
+    best_f1 = 0.0
     best_accu = 0.0
     epoch = -1
 
@@ -342,14 +290,14 @@ def main():
             logger.info(
                 'Current Epoch: {}, LR: {:.7f} | '
                 'Best Epoch: {}, '
-                'mIoU: {:.4f}, '
-                'mF2: {:.4f}, '
-                'mAccu {:.4f}'.format(
+                'gIoU: {:.4f}, '
+                'gF1: {:.4f}, '
+                'gAccu {:.4f}'.format(
                     epoch,
                     optimizer.param_groups[0]['lr'],
                     best_epoch,
                     best_iou,
-                    best_f2,
+                    best_f1,
                     best_accu
                 )
             )
@@ -379,41 +327,27 @@ def main():
 
             if rank == 0:
                 writer.add_scalar('train/loss_all', loss.item(), iters)
-                writer.add_scalar('train/loss_x', loss.item(), iters)
+                writer.add_scalar('train/lr', lr, iters)
 
             if (i % (len(trainloader) // 8) == 0) and (rank == 0):
-                logger.info('Rank {}: Iters: {:}, Total loss: {:.3f}'.format(rank, i, total_loss.avg))
+                logger.info('Iters: {:}, LR: {:.7f}, Total loss: {:.3f}'.format(i, optimizer.param_groups[0]['lr'], total_loss.avg))
 
         if rank == 0:
             evaluation = evaluate_new(model, valloader, multiplier=14)
 
-            logger.info('***** Evaluation ***** >>>> mIoU: {:.4f}[{:.4f}, {:.4f}]'.format(
-                evaluation["mIoU"], evaluation["mIoU_clear"], evaluation["mIoU_smoke"]
+            logger.info('***** Evaluation ***** >>>> gIoU: {:.4f}, gF1: {:.4f}, gAccu: {:.4f}'.format(
+                evaluation["gIoU"], evaluation["gF1"], evaluation["gAccu"]
             ))
 
-            logger.info('***** Evaluation ***** >>>> mF2: {:.4f}[{:.4f}, {:.4f}]'.format(
-                evaluation["mF2"], evaluation["mF2_clear"], evaluation["mF2_smoke"]
+            logger.info('***** Evaluation ***** >>>> gPre: {:.4f}, gRec: {:.4f}'.format(
+                evaluation["gPre"], evaluation["gRec"]
             ))
 
-            logger.info('***** Evaluation ***** >>>> mAccu: {:.4f}[{:.4f}, {:.4f}]'.format(
-                evaluation["mAccu"], evaluation["mAccu_clear"], evaluation["mAccu_smoke"]
-            ))
-
-            writer.add_scalar('eval/mIoU', evaluation["mIoU"], epoch)
-            writer.add_scalar('eval/mF2', evaluation["mF2"], epoch)
-            writer.add_scalar('eval/mRec', evaluation["mRec"], epoch)
-            writer.add_scalar('eval/mPre', evaluation["mPre"], epoch)
-            writer.add_scalar('eval/mAccu', evaluation["mAccu"], epoch)
-            writer.add_scalar('eval/mIoU_smoke', evaluation["mIoU_smoke"], epoch)
-            writer.add_scalar('eval/mF2_smoke', evaluation["mF2_smoke"], epoch)
-            writer.add_scalar('eval/mRec_smoke', evaluation["mRec_smoke"], epoch)
-            writer.add_scalar('eval/mPre_smoke', evaluation["mPre_smoke"], epoch)
-            writer.add_scalar('eval/mAccu_smoke', evaluation["mAccu_smoke"], epoch)
-            writer.add_scalar('eval/mIoU_clear', evaluation["mIoU_clear"], epoch)
-            writer.add_scalar('eval/mF2_clear', evaluation["mF2_clear"], epoch)
-            writer.add_scalar('eval/mRec_clear', evaluation["mRec_clear"], epoch)
-            writer.add_scalar('eval/mPre_clear', evaluation["mPre_clear"], epoch)
-            writer.add_scalar('eval/mAccu_clear', evaluation["mAccu_clear"], epoch)
+            writer.add_scalar('eval/gIoU', evaluation["gIoU"], epoch)
+            writer.add_scalar('eval/gF1', evaluation["gF1"], epoch)
+            writer.add_scalar('eval/gPre', evaluation["gPre"], epoch)
+            writer.add_scalar('eval/gRec', evaluation["gRec"], epoch)
+            writer.add_scalar('eval/gAccu', evaluation["gAccu"], epoch)
 
             evaluation["checkpoint"] = {
                 'model': model.state_dict(),
@@ -421,29 +355,28 @@ def main():
                 'epoch': epoch
             }
 
-            miou, mf2 = evaluation["mIoU"], evaluation["mF2"]
-            deleted = -1
+            miou, mf1 = evaluation["gIoU"], evaluation["gF1"]
 
             if len(best_evaluations) < 10:
                 best_evaluations[epoch] = evaluation
             else:
                 lowest_epoch, lowest_evaluation = sorted(
                     best_evaluations.items(),
-                    key=lambda kv: kv[1]["mIoU"]
+                    key=lambda kv: kv[1]["gIoU"]
                 )[0]
-                if miou > lowest_evaluation['mIoU']:
+                if miou > lowest_evaluation['gIoU']:
                     del best_evaluations[lowest_epoch]
                     best_evaluations[epoch] = evaluation
 
             best_epoch, best_evaluation = sorted(
                 best_evaluations.items(),
-                key=lambda kv: kv[1]["mF2"],
+                key=lambda kv: kv[1]["gF1"],
                 reverse=True
             )[0]
 
-            best_iou = best_evaluation["mIoU"]
-            best_f2 = best_evaluation["mF2"]
-            best_accu = best_evaluation["mAccu"]
+            best_iou = best_evaluation["gIoU"]
+            best_f1 = best_evaluation["gF1"]
+            best_accu = best_evaluation["gAccu"]
 
         dist.barrier()
 
@@ -453,7 +386,7 @@ def main():
 
         best_epoch, best_evaluation = sorted(
             best_evaluations.items(),
-            key=lambda kv: kv[1]["mF2"],
+            key=lambda kv: kv[1]["gF1"],
             reverse=True
         )[0]
 

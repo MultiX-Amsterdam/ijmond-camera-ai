@@ -221,7 +221,7 @@ def main():
     )
 
     trainloader_clear = DataLoader(
-        trainset_smoke,
+        trainset_clear,
         batch_size=clear_batch_size,
         pin_memory=True,
         num_workers=4,
@@ -247,11 +247,10 @@ def main():
 
     total_iters = (current_nsample or len(trainloader_u)) * cfg['epochs']
     best_evaluations = {}
-    best_evaluations = {}
     best_epoch = -1
-    best_iou, best_clear_iou, best_smoke_iou = 0.0, 0.0, 0.0
-    best_f2, best_clear_f2, best_smoke_f2 = 0.0, 0.0, 0.0
-    best_accu, best_clear_accu, best_smoke_accu = 0.0, 0.0, 0.0
+    best_iou = 0.0
+    best_f1 = 0.0
+    best_accu = 0.0
     epoch = -1
 
     # if os.path.exists(os.path.join(args.save_path, 'latest.pth')):
@@ -271,21 +270,20 @@ def main():
 
     for epoch in range(epoch + 1, cfg['epochs']):
         if rank == 0:
-            if rank == 0:
-                logger.info(
+            logger.info(
                     'Current Epoch: {}, LR: {:.7f} | '
                     'Best Epoch: {}, '
-                    'mIoU[0, 1]: {:.4f}[{:.4f}, {:.4f}], '
-                    'mF2[0, 1]: {:.4f}[{:.4f}, {:.4f}], '
-                    'mAccu {:.4f}[{:.4f}, {:.4f}]'.format(
+                    'gIoU: {:.4f}, '
+                    'gF1: {:.4f}, '
+                    'gAccu {:.4f}'.format(
                         epoch,
                         optimizer.param_groups[0]['lr'],
                         best_epoch,
-                        best_iou, best_clear_iou, best_smoke_iou,
-                        best_f2, best_clear_f2, best_smoke_f2,
-                        best_accu, best_clear_accu, best_smoke_accu
+                        best_iou,
+                        best_f1,
+                        best_accu
                     )
-                )
+            )
 
         total_loss = AverageMeter()
         total_loss_x = AverageMeter()
@@ -392,55 +390,29 @@ def main():
             evaluation_ema = evaluate_new(model_ema, valloader, multiplier=14)
 
             logger.info(
-                '***** Evaluation ***** >>>> mIoU: {:.4f}[{:.4f}, {:.4f}] | '
-                'EMA: {:.4f}[{:.4f}, {:.4f}]'.format(
-                    evaluation["mIoU"], evaluation["mIoU_clear"], evaluation["mIoU_smoke"],
-                    evaluation_ema["mIoU"], evaluation_ema["mIoU_clear"], evaluation_ema["mIoU_smoke"]
+                '***** Evaluation ***** >>>> gIoU: {:.4f}, gF1: {:.4f}, gAccu: {:.4f} | '
+                'EMA: gIoU: {:.4f}, gF1: {:.4f}, gAccu: {:.4f}'.format(
+                    evaluation["gIoU"], evaluation["gF1"], evaluation["gAccu"],
+                    evaluation_ema["gIoU"], evaluation_ema["gF1"], evaluation_ema["gAccu"]
                 ))
 
-            logger.info('***** Evaluation ***** >>>> mF2: {:.4f}[{:.4f}, {:.4f}] | '
-                        'EMA: {:.4f}[{:.4f}, {:.4f}]'.format(
-                evaluation["mF2"], evaluation["mF2_clear"], evaluation["mF2_smoke"],
-                evaluation_ema["mF2"], evaluation_ema["mF2_clear"], evaluation_ema["mF2_smoke"]
-            ))
+            logger.info(
+                '***** Evaluation ***** >>>> gPre: {:.4f}, gRec: {:.4f} | '
+                'EMA: gPre: {:.4f}, gRec: {:.4f}'.format(
+                    evaluation["gPre"], evaluation["gRec"],
+                    evaluation_ema["gPre"], evaluation_ema["gRec"]
+                ))
 
-            logger.info('***** Evaluation ***** >>>> mAccu: {:.4f}[{:.4f}, {:.4f}] | '
-                        'EMA: {:.4f}[{:.4f}, {:.4f}]'.format(
-                evaluation["mAccu"], evaluation["mAccu_clear"], evaluation["mAccu_smoke"],
-                evaluation_ema["mAccu"], evaluation_ema["mAccu_clear"], evaluation_ema["mAccu_smoke"]
-            ))
-
-            writer.add_scalar('eval/mIoU', evaluation["mIoU"], epoch)
-            writer.add_scalar('eval/mF2', evaluation["mF2"], epoch)
-            writer.add_scalar('eval/mRec', evaluation["mRec"], epoch)
-            writer.add_scalar('eval/mPre', evaluation["mPre"], epoch)
-            writer.add_scalar('eval/mAccu', evaluation["mAccu"], epoch)
-            writer.add_scalar('eval/mIoU_smoke', evaluation["mIoU_smoke"], epoch)
-            writer.add_scalar('eval/mF2_smoke', evaluation["mF2_smoke"], epoch)
-            writer.add_scalar('eval/mRec_smoke', evaluation["mRec_smoke"], epoch)
-            writer.add_scalar('eval/mPre_smoke', evaluation["mPre_smoke"], epoch)
-            writer.add_scalar('eval/mAccu_smoke', evaluation["mAccu_smoke"], epoch)
-            writer.add_scalar('eval/mIoU_clear', evaluation["mIoU_clear"], epoch)
-            writer.add_scalar('eval/mF2_clear', evaluation["mF2_clear"], epoch)
-            writer.add_scalar('eval/mRec_clear', evaluation["mRec_clear"], epoch)
-            writer.add_scalar('eval/mPre_clear', evaluation["mPre_clear"], epoch)
-            writer.add_scalar('eval/mAccu_clear', evaluation["mAccu_clear"], epoch)
-
-            writer.add_scalar('eval/mIoU_EMA', evaluation_ema["mIoU"], epoch)
-            writer.add_scalar('eval/mF2_EMA', evaluation_ema["mF2"], epoch)
-            writer.add_scalar('eval/mRec_EMA', evaluation_ema["mRec"], epoch)
-            writer.add_scalar('eval/mPre_EMA', evaluation_ema["mPre"], epoch)
-            writer.add_scalar('eval/mAccu_EMA', evaluation_ema["mAccu"], epoch)
-            writer.add_scalar('eval/mIoU_smoke_EMA', evaluation_ema["mIoU_smoke"], epoch)
-            writer.add_scalar('eval/mF2_smoke_EMA', evaluation_ema["mF2_smoke"], epoch)
-            writer.add_scalar('eval/mRec_smoke_EMA', evaluation_ema["mRec_smoke"], epoch)
-            writer.add_scalar('eval/mPre_smoke_EMA', evaluation_ema["mPre_smoke"], epoch)
-            writer.add_scalar('eval/mAccu_smoke_EMA', evaluation_ema["mAccu_smoke"], epoch)
-            writer.add_scalar('eval/mIoU_clear_EMA', evaluation_ema["mIoU_clear"], epoch)
-            writer.add_scalar('eval/mF2_clear_EMA', evaluation_ema["mF2_clear"], epoch)
-            writer.add_scalar('eval/mRec_clear_EMA', evaluation_ema["mRec_clear"], epoch)
-            writer.add_scalar('eval/mPre_clear_EMA', evaluation_ema["mPre_clear"], epoch)
-            writer.add_scalar('eval/mAccu_clear_EMA', evaluation_ema["mAccu_clear"], epoch)
+            writer.add_scalar('eval/gIoU', evaluation["gIoU"], epoch)
+            writer.add_scalar('eval/gF1', evaluation["gF1"], epoch)
+            writer.add_scalar('eval/gPre', evaluation["gPre"], epoch)
+            writer.add_scalar('eval/gRec', evaluation["gRec"], epoch)
+            writer.add_scalar('eval/gAccu', evaluation["gAccu"], epoch)
+            writer.add_scalar('eval/gIoU_EMA', evaluation_ema["gIoU"], epoch)
+            writer.add_scalar('eval/gF1_EMA', evaluation_ema["gF1"], epoch)
+            writer.add_scalar('eval/gPre_EMA', evaluation_ema["gPre"], epoch)
+            writer.add_scalar('eval/gRec_EMA', evaluation_ema["gRec"], epoch)
+            writer.add_scalar('eval/gAccu_EMA', evaluation_ema["gAccu"], epoch)
 
             evaluation["checkpoint"] = {
                 'model': model.state_dict(),
@@ -449,35 +421,28 @@ def main():
                 'epoch': epoch
             }
 
-            miou, mf2 = evaluation["mIoU"], evaluation["mF2"]
-            miou_ema, mf2_ema = evaluation_ema["mIoU"], evaluation_ema["mF2"]
+            miou, mf1 = evaluation["gIoU"], evaluation["gF1"]
 
             if len(best_evaluations) < 10:
                 best_evaluations[epoch] = evaluation
             else:
                 lowest_epoch, lowest_evaluation = sorted(
                     best_evaluations.items(),
-                    key=lambda kv: kv[1]["mIoU"]
+                    key=lambda kv: kv[1]["gIoU"]
                 )[0]
-                if miou > lowest_evaluation['mIoU']:
+                if miou > lowest_evaluation['gIoU']:
                     del best_evaluations[lowest_epoch]
                     best_evaluations[epoch] = evaluation
 
             best_epoch, best_evaluation = sorted(
                 best_evaluations.items(),
-                key=lambda kv: kv[1]["mF2"],
+                key=lambda kv: kv[1]["gF1"],
                 reverse=True
             )[0]
 
-            best_iou = best_evaluation["mIoU"]
-            best_clear_iou = best_evaluation["mIoU_clear"]
-            best_smoke_iou = best_evaluation["mIoU_smoke"]
-            best_f2 = best_evaluation["mF2"]
-            best_clear_f2 = best_evaluation["mF2_clear"]
-            best_smoke_f2 = best_evaluation["mF2_smoke"]
-            best_accu = best_evaluation["mAccu"]
-            best_clear_accu = best_evaluation["mAccu_clear"]
-            best_smoke_accu = best_evaluation["mAccu_smoke"]
+            best_iou = best_evaluation["gIoU"]
+            best_f1 = best_evaluation["gF1"]
+            best_accu = best_evaluation["gAccu"]
 
         dist.barrier()
 
@@ -487,7 +452,7 @@ def main():
 
         best_epoch, best_evaluation = sorted(
             best_evaluations.items(),
-            key=lambda kv: kv[1]["mF2"],
+            key=lambda kv: kv[1]["gF1"],
             reverse=True
         )[0]
 
