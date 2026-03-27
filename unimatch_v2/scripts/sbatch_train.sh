@@ -29,10 +29,10 @@
 #SBATCH --job-name=sbatch_ijmond_ai_train
 #SBATCH --ntasks=1
 #SBATCH --nodelist=ivi-cn015
-#SBATCH --cpus-per-task=24
-#SBATCH --gres=gpu:2
+#SBATCH --cpus-per-task=48
+#SBATCH --gres=gpu:4
 #SBATCH --time=1:00:00
-#SBATCH --mem=120G
+#SBATCH --mem=0
 #SBATCH --output=/dev/null
 #SBATCH --error=/dev/null
 #SBATCH --partition=all
@@ -47,8 +47,8 @@ exp="dinov2_base_sbatch"
 unlabeled_sample_size=1500
 unlabeled_sample_seed=23838742
 
-# Number of GPUs per node — must match --gres=gpu:N in the SBATCH header above
-NUM_GPUS=2
+# Number of GPUs per node must match --gres=gpu:N in the SBATCH header above
+NUM_GPUS=4
 PORT=9271
 
 # ---- Derived paths ----------------------------------------------------------

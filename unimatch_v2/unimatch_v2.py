@@ -8,6 +8,7 @@ from itertools import chain, cycle
 import torch
 from torch import nn
 import torch.backends.cudnn as cudnn
+import torch.distributed as dist
 from torch.optim import AdamW
 from torch.utils.data import DataLoader, SubsetRandomSampler
 from torch.utils.tensorboard import SummaryWriter
@@ -74,6 +75,15 @@ def main():
     if cfg['lock_backbone']:
         model.lock_backbone()
 
+    if rank == 0:
+        logger.info('Total params: {:.1f}M'.format(count_params(model)))
+        logger.info('Encoder params: {:.1f}M'.format(count_params(model.backbone)))
+        logger.info('Decoder params: {:.1f}M\n'.format(count_params(model.head)))
+
+    local_rank = int(os.environ.get("LOCAL_RANK", 0))
+    model = torch.nn.SyncBatchNorm.convert_sync_batchnorm(model)
+    model.cuda(local_rank)
+
     optimizer = AdamW(
         [
             {
@@ -89,16 +99,6 @@ def main():
         betas=(0.9, 0.999),
         weight_decay=0.01
     )
-
-    if rank == 0:
-        logger.info('Total params: {:.1f}M'.format(count_params(model)))
-        logger.info('Encoder params: {:.1f}M'.format(count_params(model.backbone)))
-        logger.info('Decoder params: {:.1f}M\n'.format(count_params(model.head)))
-
-    local_rank = int(os.environ.get("LOCAL_RANK", 0))
-    model = torch.nn.SyncBatchNorm.convert_sync_batchnorm(model)
-
-    model.cuda()
 
     model = torch.nn.parallel.DistributedDataParallel(
         model,
@@ -236,15 +236,13 @@ def main():
         id_path=training_cfg['validation_dataset']
     )
 
-    valsampler = torch.utils.data.distributed.DistributedSampler(valset)
-
     valloader = DataLoader(
         valset,
         batch_size=1,
         pin_memory=True,
         num_workers=1,
         drop_last=False,
-        sampler=valsampler
+        shuffle=False
     )
 
     total_iters = (current_nsample or len(trainloader_u)) * cfg['epochs']
@@ -308,9 +306,14 @@ def main():
         for i, ((img_x, mask_x),
                 (img_u_w, img_u_s1, img_u_s2, ignore_mask, cutmix_box1, cutmix_box2)) in enumerate(loader):
 
-            img_x, mask_x = img_x.cuda(), mask_x.cuda()
-            img_u_w, img_u_s1, img_u_s2 = img_u_w.cuda(), img_u_s1.cuda(), img_u_s2.cuda()
-            ignore_mask, cutmix_box1, cutmix_box2 = ignore_mask.cuda(), cutmix_box1.cuda(), cutmix_box2.cuda()
+            img_x = img_x.cuda(local_rank, non_blocking=True)
+            mask_x = mask_x.cuda(local_rank, non_blocking=True)
+            img_u_w = img_u_w.cuda(local_rank, non_blocking=True)
+            img_u_s1 = img_u_s1.cuda(local_rank, non_blocking=True)
+            img_u_s2 = img_u_s2.cuda(local_rank, non_blocking=True)
+            ignore_mask = ignore_mask.cuda(local_rank, non_blocking=True)
+            cutmix_box1 = cutmix_box1.cuda(local_rank, non_blocking=True)
+            cutmix_box2 = cutmix_box2.cuda(local_rank, non_blocking=True)
 
             with torch.no_grad():
                 pred_u_w = model_ema(img_u_w).detach()
@@ -384,12 +387,10 @@ def main():
                             '{:.3f}'.format(i, optimizer.param_groups[0]['lr'], total_loss.avg, total_loss_x.avg,
                                             total_loss_s.avg, total_mask_ratio.avg))
 
-        # evaluation = evaluate(model, valloader, cfg, multiplier=14)
-        # evaluation_ema = evaluate(model_ema, valloader, cfg, multiplier=14)
-        evaluation = evaluate_new(model, valloader, multiplier=14)
-        evaluation_ema = evaluate_new(model_ema, valloader, multiplier=14)
-
         if rank == 0:
+            evaluation = evaluate_new(model, valloader, multiplier=14)
+            evaluation_ema = evaluate_new(model_ema, valloader, multiplier=14)
+
             logger.info(
                 '***** Evaluation ***** >>>> mIoU: {:.4f}[{:.4f}, {:.4f}] | '
                 'EMA: {:.4f}[{:.4f}, {:.4f}]'.format(
@@ -441,43 +442,44 @@ def main():
             writer.add_scalar('eval/mPre_clear_EMA', evaluation_ema["mPre_clear"], epoch)
             writer.add_scalar('eval/mAccu_clear_EMA', evaluation_ema["mAccu_clear"], epoch)
 
-        evaluation["checkpoint"] = {
-            'model': model.state_dict(),
-            'model_ema': model_ema.state_dict(),
-            'optimizer': optimizer.state_dict(),
-            'epoch': epoch
-        }
+            evaluation["checkpoint"] = {
+                'model': model.state_dict(),
+                'model_ema': model_ema.state_dict(),
+                'optimizer': optimizer.state_dict(),
+                'epoch': epoch
+            }
 
-        miou, mf2 = evaluation["mIoU"], evaluation["mF2"]
-        miou_ema, mf2_ema = evaluation_ema["mIoU"], evaluation_ema["mF2"]
+            miou, mf2 = evaluation["mIoU"], evaluation["mF2"]
+            miou_ema, mf2_ema = evaluation_ema["mIoU"], evaluation_ema["mF2"]
 
-        if len(best_evaluations) < 10:
-            best_evaluations[epoch] = evaluation
-        else:
-            lowest_epoch, lowest_evaluation = sorted(
+            if len(best_evaluations) < 10:
+                best_evaluations[epoch] = evaluation
+            else:
+                lowest_epoch, lowest_evaluation = sorted(
+                    best_evaluations.items(),
+                    key=lambda kv: kv[1]["mIoU"]
+                )[0]
+                if miou > lowest_evaluation['mIoU']:
+                    del best_evaluations[lowest_epoch]
+                    best_evaluations[epoch] = evaluation
+
+            best_epoch, best_evaluation = sorted(
                 best_evaluations.items(),
-                key=lambda kv: kv[1]["mIoU"]
+                key=lambda kv: kv[1]["mF2"],
+                reverse=True
             )[0]
 
-            if miou > lowest_evaluation['mIoU']:
-                del best_evaluations[lowest_epoch]
-                best_evaluations[epoch] = evaluation
+            best_iou = best_evaluation["mIoU"]
+            best_clear_iou = best_evaluation["mIoU_clear"]
+            best_smoke_iou = best_evaluation["mIoU_smoke"]
+            best_f2 = best_evaluation["mF2"]
+            best_clear_f2 = best_evaluation["mF2_clear"]
+            best_smoke_f2 = best_evaluation["mF2_smoke"]
+            best_accu = best_evaluation["mAccu"]
+            best_clear_accu = best_evaluation["mAccu_clear"]
+            best_smoke_accu = best_evaluation["mAccu_smoke"]
 
-        best_epoch, best_evaluation = sorted(
-            best_evaluations.items(),
-            key=lambda kv: kv[1]["mF2"],
-            reverse=True
-        )[0]
-
-        best_iou = best_evaluation["mIoU"]
-        best_clear_iou = best_evaluation["mIoU_clear"]
-        best_smoke_iou = best_evaluation["mIoU_smoke"]
-        best_f2 = best_evaluation["mF2"]
-        best_clear_f2 = best_evaluation["mF2_clear"]
-        best_smoke_f2 = best_evaluation["mF2_smoke"]
-        best_accu = best_evaluation["mAccu"]
-        best_clear_accu = best_evaluation["mAccu_clear"]
-        best_smoke_accu = best_evaluation["mAccu_smoke"]
+        dist.barrier()
 
     if rank == 0:
         for ep, eval_ in best_evaluations.items():

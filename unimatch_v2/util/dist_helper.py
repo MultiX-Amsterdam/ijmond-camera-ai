@@ -7,7 +7,7 @@ import torch.distributed as dist
 
 os.environ["USE_LIBUV"] = '0'
 
-#def setup_distributed(backend="nccl", port=None):
+
 def setup_distributed(backend='gloo', port=None):
     """AdaHessian Optimizer
     Lifted from https://github.com/BIGBALLON/distribuuuu/blob/master/distribuuuu/utils.py
@@ -15,15 +15,24 @@ def setup_distributed(backend='gloo', port=None):
     """
     num_gpus = torch.cuda.device_count()
 
-    os.environ['GLOO_DEBUG']='1'
-
-
-    if "SLURM_JOB_ID" in os.environ:
+    if "RANK" in os.environ and "WORLD_SIZE" in os.environ:
+        # Launched by torchrun (works under SLURM or standalone).
+        # torchrun sets RANK/LOCAL_RANK/WORLD_SIZE correctly per process,
+        # so we must NOT use SLURM_PROCID/SLURM_NTASKS here.
+        rank = int(os.environ["RANK"])
+        world_size = int(os.environ["WORLD_SIZE"])
+        if port is not None:
+            os.environ["MASTER_PORT"] = str(port)
+        elif "MASTER_PORT" not in os.environ:
+            os.environ["MASTER_PORT"] = "10685"
+        if "MASTER_ADDR" not in os.environ:
+            os.environ["MASTER_ADDR"] = "localhost"
+    elif "SLURM_JOB_ID" in os.environ:
+        # Native SLURM launch (srun with --ntasks>1, without torchrun).
         rank = int(os.environ["SLURM_PROCID"])
         world_size = int(os.environ["SLURM_NTASKS"])
         node_list = os.environ["SLURM_NODELIST"]
         addr = subprocess.getoutput(f"scontrol show hostname {node_list} | head -n1")
-        # specify master port
         if port is not None:
             os.environ["MASTER_PORT"] = str(port)
         elif "MASTER_PORT" not in os.environ:
@@ -34,14 +43,17 @@ def setup_distributed(backend='gloo', port=None):
         os.environ["LOCAL_RANK"] = str(rank % num_gpus)
         os.environ["RANK"] = str(rank)
     else:
+        # Single-GPU / local run without torchrun or SLURM.
+        rank = 0
+        world_size = 1
         os.environ["MASTER_ADDR"] = "localhost"
-        os.environ["MASTER_PORT"] = "10685"
-        #rank = int(os.environ["RANK"])
-        rank = int(os.environ.get("RANK", 0))
-        #world_size = int(os.environ["WORLD_SIZE"])
-        world_size = int(os.environ.get("WORLD_SIZE", 1))
+        if port is not None:
+            os.environ["MASTER_PORT"] = str(port)
+        elif "MASTER_PORT" not in os.environ:
+            os.environ["MASTER_PORT"] = "10685"
 
-    torch.cuda.set_device(rank % num_gpus if num_gpus > 0 else -1)
+    local_rank = int(os.environ.get("LOCAL_RANK", rank % num_gpus))
+    torch.cuda.set_device(local_rank if num_gpus > 0 else -1)
 
     dist.init_process_group(
         backend=backend,

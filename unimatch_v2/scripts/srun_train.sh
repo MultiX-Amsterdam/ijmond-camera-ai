@@ -6,12 +6,12 @@
 # model: ['m-zeroshot', 'm-citizen', ...]. Please check directory './splits' for available model splits
 
 # The m-zeroshot experiment
-# model='m-zeroshot'
-# method='supervised'
+model='m-zeroshot'
+method='supervised'
 
 # The m-citizen experiment
-model='m-citizen'
-method='unimatch_v2'
+# model='m-citizen'
+# method='unimatch_v2'
 
 exp='dinov2_base_ddp'
 unlabeled_sample_size=1500

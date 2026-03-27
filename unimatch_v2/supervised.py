@@ -126,23 +126,12 @@ def evaluate_new(model, dataloader, w_pos=0.8, w_neg=0.2, threshold=0.5, multipl
             preds = (outputs > threshold).float()
             preds = preds.argmax(dim=1)
 
-            intersection, union, target = \
-                intersectionAndUnion(preds.cpu().numpy(), masks.cpu().numpy(), 2, 255)
-
-            # --- CASE 1: NEGATIVE SAMPLE (No Smoke Present) ---
-            if masks.cpu().sum() == 0:
-                clear_iou = (intersection[0].sum() + smooth) / (union[0].sum() + smooth)
-                clear_ious.append(clear_iou)
-                correct_pixels = (preds.cpu() == masks.cpu()).sum().item()
-                clear_accu.append(correct_pixels / preds.numel())
-            # --- CASE 2: POSITIVE SAMPLE (Smoke Present) ---
-            else:
-                smoke_iou = (intersection[1].sum() + smooth) / (union[1].sum() + smooth)
-                smoke_ious.append(smoke_iou)
-                correct_pixels = (preds.cpu() == masks.cpu()).sum().item()
-                smoke_accu.append(correct_pixels / preds.numel())
-
             for p, m in zip(preds, masks):
+                p_np = p.cpu().numpy()
+                m_np = m.cpu().numpy()
+
+                intersection, union_arr, _ = intersectionAndUnion(p_np[None], m_np[None], 2, 255)
+
                 # Pixel-level components
                 tp = (p * m).sum().item()
                 fp = (p * (1 - m)).sum().item()
@@ -154,6 +143,10 @@ def evaluate_new(model, dataloader, w_pos=0.8, w_neg=0.2, threshold=0.5, multipl
 
                 # --- CASE 1: NEGATIVE SAMPLE (No Smoke Present) ---
                 if m.sum() == 0:
+                    clear_iou = (intersection[0].sum() + smooth) / (union_arr[0].sum() + smooth)
+                    clear_ious.append(clear_iou)
+                    clear_accu.append((p_np == m_np).sum() / p_np.size)
+
                     score = 1.0 if p.sum() == 0 else 0.0
                     clear_f2s.append(score)
                     clear_recalls.append(score)
@@ -161,6 +154,10 @@ def evaluate_new(model, dataloader, w_pos=0.8, w_neg=0.2, threshold=0.5, multipl
 
                 # --- CASE 2: POSITIVE SAMPLE (Smoke Present) ---
                 else:
+                    smoke_iou = (intersection[1].sum() + smooth) / (union_arr[1].sum() + smooth)
+                    smoke_ious.append(smoke_iou)
+                    smoke_accu.append((p_np == m_np).sum() / p_np.size)
+
                     # F2 Score
                     f2 = (5 * precision * recall) / (4 * precision + recall + smooth)
                     smoke_f2s.append(f2)
@@ -248,6 +245,13 @@ def main():
     if cfg['lock_backbone']:
         model.lock_backbone()
 
+    if rank == 0:
+        logger.info('Total params: {:.1f}M\n'.format(count_params(model)))
+
+    local_rank = int(os.environ.get("LOCAL_RANK", 0))
+    model = torch.nn.SyncBatchNorm.convert_sync_batchnorm(model)
+    model.cuda(local_rank)
+
     optimizer = AdamW(
         [
             {
@@ -263,14 +267,6 @@ def main():
         betas=(0.9, 0.999),
         weight_decay=0.01
     )
-
-    if rank == 0:
-        logger.info('Total params: {:.1f}M\n'.format(count_params(model)))
-
-    local_rank = int(os.environ.get("LOCAL_RANK", 0))
-    model = torch.nn.SyncBatchNorm.convert_sync_batchnorm(model)
-
-    model.cuda(local_rank)
 
     model = torch.nn.parallel.DistributedDataParallel(
         model,
@@ -313,15 +309,13 @@ def main():
         sampler=trainsampler
     )
 
-    valsampler = torch.utils.data.distributed.DistributedSampler(valset)
-
     valloader = DataLoader(
         valset,
         batch_size=1,
         pin_memory=True,
         num_workers=1,
         drop_last=False,
-        sampler=valsampler
+        shuffle=False
     )
 
     iters = 0
@@ -367,7 +361,8 @@ def main():
 
         for i, (img, mask) in enumerate(trainloader):
 
-            img, mask = img.cuda(), mask.cuda()
+            img = img.cuda(local_rank, non_blocking=True)
+            mask = mask.cuda(local_rank, non_blocking=True)
             pred = model(img)
             loss = criterion(pred, mask)
 
@@ -387,11 +382,11 @@ def main():
                 writer.add_scalar('train/loss_x', loss.item(), iters)
 
             if (i % (len(trainloader) // 8) == 0) and (rank == 0):
-                logger.info('Iters: {:}, Total loss: {:.3f}'.format(i, total_loss.avg))
-
-        evaluation = evaluate_new(model, valloader, multiplier=14)
+                logger.info('Rank {}: Iters: {:}, Total loss: {:.3f}'.format(rank, i, total_loss.avg))
 
         if rank == 0:
+            evaluation = evaluate_new(model, valloader, multiplier=14)
+
             logger.info('***** Evaluation ***** >>>> mIoU: {:.4f}[{:.4f}, {:.4f}]'.format(
                 evaluation["mIoU"], evaluation["mIoU_clear"], evaluation["mIoU_smoke"]
             ))
@@ -420,36 +415,37 @@ def main():
             writer.add_scalar('eval/mPre_clear', evaluation["mPre_clear"], epoch)
             writer.add_scalar('eval/mAccu_clear', evaluation["mAccu_clear"], epoch)
 
-        evaluation["checkpoint"] = {
-            'model': model.state_dict(),
-            'optimizer': optimizer.state_dict(),
-            'epoch': epoch
-        }
+            evaluation["checkpoint"] = {
+                'model': model.state_dict(),
+                'optimizer': optimizer.state_dict(),
+                'epoch': epoch
+            }
 
-        miou, mf2 = evaluation["mIoU"], evaluation["mF2"]
-        deleted = -1
+            miou, mf2 = evaluation["mIoU"], evaluation["mF2"]
+            deleted = -1
 
-        if len(best_evaluations) < 10:
-            best_evaluations[epoch] = evaluation
-        else:
-            lowest_epoch, lowest_evaluation = sorted(
+            if len(best_evaluations) < 10:
+                best_evaluations[epoch] = evaluation
+            else:
+                lowest_epoch, lowest_evaluation = sorted(
+                    best_evaluations.items(),
+                    key=lambda kv: kv[1]["mIoU"]
+                )[0]
+                if miou > lowest_evaluation['mIoU']:
+                    del best_evaluations[lowest_epoch]
+                    best_evaluations[epoch] = evaluation
+
+            best_epoch, best_evaluation = sorted(
                 best_evaluations.items(),
-                key=lambda kv: kv[1]["mIoU"]
+                key=lambda kv: kv[1]["mF2"],
+                reverse=True
             )[0]
 
-            if miou > lowest_evaluation['mIoU']:
-                del best_evaluations[lowest_epoch]
-                best_evaluations[epoch] = evaluation
+            best_iou = best_evaluation["mIoU"]
+            best_f2 = best_evaluation["mF2"]
+            best_accu = best_evaluation["mAccu"]
 
-        best_epoch, best_evaluation = sorted(
-            best_evaluations.items(),
-            key=lambda kv: kv[1]["mF2"],
-            reverse=True
-        )[0]
-
-        best_iou = best_evaluation["mIoU"]
-        best_f2 = best_evaluation["mF2"]
-        best_accu = best_evaluation["mAccu"]
+        dist.barrier()
 
     if rank == 0:
         for ep, eval_ in best_evaluations.items():
