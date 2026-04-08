@@ -251,6 +251,9 @@ def main():
     best_iou = 0.0
     best_f1 = 0.0
     best_accu = 0.0
+    best_miou = 0.0
+    best_mf1 = 0.0
+    best_far = 0.0
     epoch = -1
 
     # if os.path.exists(os.path.join(args.save_path, 'latest.pth')):
@@ -275,13 +278,19 @@ def main():
                     'Best Epoch: {}, '
                     'gIoU: {:.4f}, '
                     'gF1: {:.4f}, '
-                    'gAccu {:.4f}'.format(
+                    'gAccu: {:.4f}, '
+                    'mIoU: {:.4f}, '
+                    'mF1: {:.4f}, '
+                    'FAR: {:.4f}'.format(
                         epoch,
                         optimizer.param_groups[0]['lr'],
                         best_epoch,
                         best_iou,
                         best_f1,
-                        best_accu
+                        best_accu,
+                        best_miou,
+                        best_mf1,
+                        best_far
                     )
             )
 
@@ -403,16 +412,29 @@ def main():
                     evaluation_ema["gPre"], evaluation_ema["gRec"]
                 ))
 
+            logger.info(
+                '***** Evaluation ***** >>>> mIoU: {:.4f}, mF1: {:.4f}, FAR: {:.4f} | '
+                'EMA: mIoU: {:.4f}, mF1: {:.4f}, FAR: {:.4f}'.format(
+                    evaluation["mIoU"], evaluation["mF1"], evaluation["FAR"],
+                    evaluation_ema["mIoU"], evaluation_ema["mF1"], evaluation_ema["FAR"]
+                ))
+
             writer.add_scalar('eval/gIoU', evaluation["gIoU"], epoch)
             writer.add_scalar('eval/gF1', evaluation["gF1"], epoch)
             writer.add_scalar('eval/gPre', evaluation["gPre"], epoch)
             writer.add_scalar('eval/gRec', evaluation["gRec"], epoch)
             writer.add_scalar('eval/gAccu', evaluation["gAccu"], epoch)
+            writer.add_scalar('eval/mIoU', evaluation["mIoU"], epoch)
+            writer.add_scalar('eval/mF1', evaluation["mF1"], epoch)
+            writer.add_scalar('eval/FAR', evaluation["FAR"], epoch)
             writer.add_scalar('eval/gIoU_EMA', evaluation_ema["gIoU"], epoch)
             writer.add_scalar('eval/gF1_EMA', evaluation_ema["gF1"], epoch)
             writer.add_scalar('eval/gPre_EMA', evaluation_ema["gPre"], epoch)
             writer.add_scalar('eval/gRec_EMA', evaluation_ema["gRec"], epoch)
             writer.add_scalar('eval/gAccu_EMA', evaluation_ema["gAccu"], epoch)
+            writer.add_scalar('eval/mIoU_EMA', evaluation_ema["mIoU"], epoch)
+            writer.add_scalar('eval/mF1_EMA', evaluation_ema["mF1"], epoch)
+            writer.add_scalar('eval/FAR_EMA', evaluation_ema["FAR"], epoch)
 
             evaluation["checkpoint"] = {
                 'model': model.state_dict(),
@@ -443,6 +465,9 @@ def main():
             best_iou = best_evaluation["gIoU"]
             best_f1 = best_evaluation["gF1"]
             best_accu = best_evaluation["gAccu"]
+            best_miou = best_evaluation["mIoU"]
+            best_mf1 = best_evaluation["mF1"]
+            best_far = best_evaluation["FAR"]
 
         dist.barrier()
 

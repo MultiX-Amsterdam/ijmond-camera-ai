@@ -1,4 +1,5 @@
 import argparse
+from copy import deepcopy
 import logging
 import glob
 import os
@@ -88,10 +89,17 @@ def evaluate(model, loader, cfg, multiplier=None):
 
 def evaluate_new(model, dataloader, multiplier=None):
     """
-    Calculates smoke-class global IoU, F1 score, and pixel accuracy.
+    Calculates smoke-class evaluation metrics.
 
-    Metrics are computed globally by accumulating TP/FP/FN across all images,
-    focusing solely on smoke pixel detection (class 1).
+    Global metrics (gIoU, gF1, gPre, gRec, gAccu) are computed by
+    accumulating TP/FP/FN across all images.
+
+    Per-image metrics (mIoU, mF1) are averaged over positive images only
+    (images where ground truth contains smoke). Negative images are excluded
+    from mIoU/mF1 to avoid degenerate computation.
+
+    False Alarm Rate (FAR) is computed as the fraction of negative images
+    where the model incorrectly predicts any smoke pixels.
     """
     model.eval()
 
@@ -100,6 +108,11 @@ def evaluate_new(model, dataloader, multiplier=None):
     total_fn = 0
     total_correct = 0
     total_pixels = 0
+
+    per_image_ious = []
+    per_image_f1s = []
+    num_negative = 0
+    num_false_alarm = 0
 
     smooth = 1e-7
 
@@ -134,11 +147,35 @@ def evaluate_new(model, dataloader, multiplier=None):
             total_correct += (preds == masks).sum().item()
             total_pixels += masks.numel()
 
+            for b in range(masks.shape[0]):
+                sp = smoke_pred[b]
+                sg = smoke_gt[b]
+                if sg.sum().item() > 0:
+                    tp = (sp & sg).sum().item()
+                    fp = (sp & ~sg).sum().item()
+                    fn = (~sp & sg).sum().item()
+                    img_iou = (tp + smooth) / (tp + fp + fn + smooth)
+                    img_pre = (tp + smooth) / (tp + fp + smooth)
+                    img_rec = (tp + smooth) / (tp + fn + smooth)
+                    img_f1 = (2 * img_pre * img_rec) / (img_pre + img_rec + smooth)
+                    per_image_ious.append(img_iou)
+                    per_image_f1s.append(img_f1)
+                else:
+                    num_negative += 1
+                    # Only trigger an alarm if a cluster of pixels is predicted
+                    noise_threshold = 10
+                    if sp.sum().item() > noise_threshold:
+                        num_false_alarm += 1
+
     iou = (total_tp + smooth) / (total_tp + total_fp + total_fn + smooth)
     precision = (total_tp + smooth) / (total_tp + total_fp + smooth)
     recall = (total_tp + smooth) / (total_tp + total_fn + smooth)
     f1 = (2 * precision * recall) / (precision + recall + smooth)
     accuracy = total_correct / max(total_pixels, 1)
+
+    miou = np.mean(per_image_ious) if per_image_ious else 0.0
+    mf1 = np.mean(per_image_f1s) if per_image_f1s else 0.0
+    far = num_false_alarm / max(num_negative, 1)
 
     return {
         "gIoU": iou,
@@ -146,6 +183,9 @@ def evaluate_new(model, dataloader, multiplier=None):
         "gPre": precision,
         "gRec": recall,
         "gAccu": accuracy,
+        "mIoU": miou,
+        "mF1": mf1,
+        "FAR": far,
     }
 
 
@@ -199,6 +239,11 @@ def main():
     local_rank = int(os.environ.get("LOCAL_RANK", 0))
     model = torch.nn.SyncBatchNorm.convert_sync_batchnorm(model)
     model.cuda(local_rank)
+
+    model_ema = deepcopy(model)
+    model_ema.eval()
+    for param in model_ema.parameters():
+        param.requires_grad = False
 
     optimizer = AdamW(
         [
@@ -268,11 +313,9 @@ def main():
 
     iters = 0
     total_iters = len(trainloader) * cfg['epochs']
-    best_evaluations = {}
     best_epoch = -1
-    best_iou = 0.0
-    best_f1 = 0.0
-    best_accu = 0.0
+    best_eval = None
+    best_eval_ema = None
     epoch = -1
 
     # if os.path.exists(os.path.join(args.save_path, 'latest.pth')):
@@ -287,20 +330,35 @@ def main():
 
     for epoch in range(epoch + 1, cfg['epochs']):
         if rank == 0:
-            logger.info(
-                'Current Epoch: {}, LR: {:.7f} | '
-                'Best Epoch: {}, '
-                'gIoU: {:.4f}, '
-                'gF1: {:.4f}, '
-                'gAccu {:.4f}'.format(
-                    epoch,
-                    optimizer.param_groups[0]['lr'],
-                    best_epoch,
-                    best_iou,
-                    best_f1,
-                    best_accu
+            if best_eval is not None:
+                logger.info(
+                    'Current Epoch: {}, LR: {:.7f} | '
+                    'Best Epoch: {}, '
+                    'gIoU: {:.4f}, '
+                    'gF1: {:.4f}, '
+                    'gAccu: {:.4f}, '
+                    'mIoU: {:.4f}, '
+                    'mF1: {:.4f}, '
+                    'FAR: {:.4f}'.format(
+                        epoch,
+                        optimizer.param_groups[0]['lr'],
+                        best_epoch,
+                        best_eval["gIoU"],
+                        best_eval["gF1"],
+                        best_eval["gAccu"],
+                        best_eval["mIoU"],
+                        best_eval["mF1"],
+                        best_eval["FAR"]
+                    )
                 )
-            )
+            else:
+                logger.info(
+                    'Current Epoch: {}, LR: {:.7f} | '
+                    'Best Epoch: N/A'.format(
+                        epoch,
+                        optimizer.param_groups[0]['lr']
+                    )
+                )
 
         model.train()
         total_loss = AverageMeter()
@@ -321,6 +379,16 @@ def main():
             total_loss.update(loss.item())
 
             iters = epoch * len(trainloader) + i
+
+            ema_decay = min(1 - 1 / (iters + 1), 0.996)
+            for param_train, param_ema in zip(model.module.parameters(), model_ema.parameters()):
+                param_ema.data.lerp_(param_train.data, 1.0 - ema_decay)
+            for buffer_train, buffer_ema in zip(model.module.buffers(), model_ema.buffers()):
+                if buffer_train.dtype.is_floating_point:
+                    buffer_ema.data.lerp_(buffer_train.data, 1.0 - ema_decay)
+                else:
+                    buffer_ema.data.copy_(buffer_train.data)
+
             lr = cfg['lr'] * (1 - iters / total_iters) ** 0.9
             optimizer.param_groups[0]["lr"] = lr
             optimizer.param_groups[1]["lr"] = lr * cfg['lr_multi']
@@ -334,63 +402,67 @@ def main():
 
         if rank == 0:
             evaluation = evaluate_new(model, valloader, multiplier=14)
+            evaluation_ema = evaluate_new(model_ema, valloader, multiplier=14)
 
-            logger.info('***** Evaluation ***** >>>> gIoU: {:.4f}, gF1: {:.4f}, gAccu: {:.4f}'.format(
-                evaluation["gIoU"], evaluation["gF1"], evaluation["gAccu"]
-            ))
+            logger.info(
+                '***** Evaluation ***** >>>> gIoU: {:.4f}, gF1: {:.4f}, gAccu: {:.4f} | '
+                'EMA: gIoU: {:.4f}, gF1: {:.4f}, gAccu: {:.4f}'.format(
+                    evaluation["gIoU"], evaluation["gF1"], evaluation["gAccu"],
+                    evaluation_ema["gIoU"], evaluation_ema["gF1"], evaluation_ema["gAccu"]
+                ))
 
-            logger.info('***** Evaluation ***** >>>> gPre: {:.4f}, gRec: {:.4f}'.format(
-                evaluation["gPre"], evaluation["gRec"]
-            ))
+            logger.info(
+                '***** Evaluation ***** >>>> gPre: {:.4f}, gRec: {:.4f} | '
+                'EMA: gPre: {:.4f}, gRec: {:.4f}'.format(
+                    evaluation["gPre"], evaluation["gRec"],
+                    evaluation_ema["gPre"], evaluation_ema["gRec"]
+                ))
+
+            logger.info(
+                '***** Evaluation ***** >>>> mIoU: {:.4f}, mF1: {:.4f}, FAR: {:.4f} | '
+                'EMA: mIoU: {:.4f}, mF1: {:.4f}, FAR: {:.4f}'.format(
+                    evaluation["mIoU"], evaluation["mF1"], evaluation["FAR"],
+                    evaluation_ema["mIoU"], evaluation_ema["mF1"], evaluation_ema["FAR"]
+                ))
 
             writer.add_scalar('eval/gIoU', evaluation["gIoU"], epoch)
             writer.add_scalar('eval/gF1', evaluation["gF1"], epoch)
             writer.add_scalar('eval/gPre', evaluation["gPre"], epoch)
             writer.add_scalar('eval/gRec', evaluation["gRec"], epoch)
             writer.add_scalar('eval/gAccu', evaluation["gAccu"], epoch)
+            writer.add_scalar('eval/mIoU', evaluation["mIoU"], epoch)
+            writer.add_scalar('eval/mF1', evaluation["mF1"], epoch)
+            writer.add_scalar('eval/FAR', evaluation["FAR"], epoch)
+            writer.add_scalar('eval/gIoU_EMA', evaluation_ema["gIoU"], epoch)
+            writer.add_scalar('eval/gF1_EMA', evaluation_ema["gF1"], epoch)
+            writer.add_scalar('eval/gPre_EMA', evaluation_ema["gPre"], epoch)
+            writer.add_scalar('eval/gRec_EMA', evaluation_ema["gRec"], epoch)
+            writer.add_scalar('eval/gAccu_EMA', evaluation_ema["gAccu"], epoch)
+            writer.add_scalar('eval/mIoU_EMA', evaluation_ema["mIoU"], epoch)
+            writer.add_scalar('eval/mF1_EMA', evaluation_ema["mF1"], epoch)
+            writer.add_scalar('eval/FAR_EMA', evaluation_ema["FAR"], epoch)
 
-            evaluation["checkpoint"] = {
-                'model': model.state_dict(),
-                'optimizer': optimizer.state_dict(),
-                'epoch': epoch
-            }
+            if best_eval is None or evaluation["gF1"] > best_eval["gF1"]:
+                best_epoch = epoch
+                best_eval = {k: v for k, v in evaluation.items()}
+                best_eval["checkpoint"] = {
+                    "model": model.state_dict(),
+                    "optimizer": optimizer.state_dict(),
+                    "epoch": epoch
+                }
 
-            miou, mf1 = evaluation["gIoU"], evaluation["gF1"]
-
-            if len(best_evaluations) < 10:
-                best_evaluations[epoch] = evaluation
-            else:
-                lowest_epoch, lowest_evaluation = sorted(
-                    best_evaluations.items(),
-                    key=lambda kv: kv[1]["gIoU"]
-                )[0]
-                if miou > lowest_evaluation['gIoU']:
-                    del best_evaluations[lowest_epoch]
-                    best_evaluations[epoch] = evaluation
-
-            best_epoch, best_evaluation = sorted(
-                best_evaluations.items(),
-                key=lambda kv: kv[1]["gF1"],
-                reverse=True
-            )[0]
-
-            best_iou = best_evaluation["gIoU"]
-            best_f1 = best_evaluation["gF1"]
-            best_accu = best_evaluation["gAccu"]
+            if best_eval_ema is None or evaluation_ema["gF1"] > best_eval_ema["gF1"]:
+                best_eval_ema = {k: v for k, v in evaluation_ema.items()}
+                best_eval_ema["checkpoint"] = {
+                    "model_ema": model_ema.state_dict(),
+                    "epoch": epoch
+                }
 
         dist.barrier()
 
     if rank == 0:
-        for ep, eval_ in best_evaluations.items():
-            torch.save(eval_, os.path.join(args.save_path, f"checkpoint_{ep}.pth"))
-
-        best_epoch, best_evaluation = sorted(
-            best_evaluations.items(),
-            key=lambda kv: kv[1]["gF1"],
-            reverse=True
-        )[0]
-
-        torch.save(best_evaluation, os.path.join(args.save_path, f"best.pth"))
+        torch.save(best_eval, os.path.join(args.save_path, "best.pth"))
+        torch.save(best_eval_ema, os.path.join(args.save_path, "best_ema.pth"))
 
 
 if __name__ == '__main__':
