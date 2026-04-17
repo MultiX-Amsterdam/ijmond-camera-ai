@@ -6,27 +6,28 @@ This folder contains a weakly semi-supervised learning pipeline that uses boundi
 
 ### Prepare citizen-labeled IJmond bounding boxes
 
-Prepare IJmond bounding boxes for training. This will download images to the `dataset/ijmond_bbox/img` folder, create a `filtered_bbox_labels_1_aug_2025.json` file with filtered and aggregated bounding boxes, and create `.npy` files in the `dataset/ijmond_bbox/img_npy` folder, and create debugging images to the `dataset/ijmond_bbox/debug` folder.
+Prepare IJmond bounding boxes for training. This will download images to the `dataset/ijmond_bbox/img` folder, create a `filtered_bbox_labels_1_aug_2025.json` file with filtered and aggregated bounding boxes, and create debugging images to the `dataset/ijmond_bbox/debug` folder.
 ```sh
 python download_ijmond_bbox_images.py dataset/ijmond_bbox/bbox_labels_1_aug_2025.json dataset/ijmond_bbox/img
-python filter_aggr_bbox_and_create_npy.py dataset/ijmond_bbox/bbox_labels_1_aug_2025.json dataset/ijmond_bbox/filtered_bbox_labels_1_aug_2025.json dataset/ijmond_bbox/
+python filter_aggr_bbox.py dataset/ijmond_bbox/bbox_labels_1_aug_2025.json dataset/ijmond_bbox/filtered_bbox_labels_1_aug_2025.json dataset/ijmond_bbox/
 ```
 
 Test if the IJmond bounding boxes can be loaded. This will create a `debug_plot_ijmondbox.png` file for debugging.
 ```sh
-python ijmond_bbox_dataset.py dataset/ijmond_bbox/filtered_bbox_labels_1_aug_2025.json dataset/ijmond_bbox/img_npy/
+python ijmond_bbox_dataset.py dataset/ijmond_bbox/filtered_bbox_labels_1_aug_2025.json dataset/ijmond_bbox/img/
 ```
 
 ### Prepare SMOKE5K data for pretraining
 
-Prepare SMOKE5K for training. This will create `.npy` files and also metadata txt files in `dataset/smoke5k/`.
+Prepare SMOKE5K for training. This will create metadata txt files in `dataset/smoke5k/`.
 ```sh
-python create_smoke5k_metadata_and_npy.py dataset/smoke5k/
+python create_smoke5k_metadata.py dataset/smoke5k/
 ```
 
-Check if the SMOKE5K dataset can be loaded. This will create `debug_plot_smoke5k_test.png` and `debug_plot_smoke5k_test_transformed.png` files for debugging.
+Check if the SMOKE5K dataset can be loaded. This will create `debug_plot_smoke5k_test.png`, `debug_plot_smoke5k_test_transformed.png`, `debug_plot_smoke5k_train.png`, and `debug_plot_smoke5k_train_transformed.png` files for debugging.
 ```sh
 python smoke_dataset.py dataset/smoke5k/test/test.txt dataset/smoke5k/test/ smoke5k_test
+python smoke_dataset.py dataset/smoke5k/train/train.txt dataset/smoke5k/train/ smoke5k_train
 ```
 
 ### Create IJmond pseudo masks based on the bounding boxes
@@ -39,7 +40,7 @@ wget -P https://dl.fbaipublicfiles.com/segment_anything/sam_vit_l_0b3195.pth
 
 Create pseudo masks and metadata txt files (one with masks, one without masks) using the IJmond bounding boxes and save the masks in the `dataset/ijmond_pseudo_masks/` path. This will create `debug_plot_pseudo_masks.png` file for debugging.
 ```sh
-python create_pseudo_masks.py dataset/ijmond_bbox/filtered_bbox_labels_1_aug_2025.json dataset/ijmond_bbox/img_npy/
+python create_pseudo_masks.py dataset/ijmond_bbox/filtered_bbox_labels_1_aug_2025.json dataset/ijmond_bbox/img/
 ```
 
 Check if the IJmond pseudo masks dataset can be loaded. This will create `debug_plot_ijmond_pseudo_masks_with_mask.png` and `debug_plot_ijmond_pseudo_masks_with_mask_transformed.png` files for debugging.
@@ -67,45 +68,41 @@ Prepare the IJmond segmentation dataset. You need to first get the dataset with 
 ```sh
 └── dataset # the root folder
     └── ijmond_seg # the folder that contains the IJmond segmentation dataset
-        └── images # all camera images
-            ├── XXX.jpg
-            └── ...
+        ├── test
+            └── images # all camera images
+                ├── XXX.jpg
+                └── ...
         └── _annotations.coco.json # the annotation file
 ```
 
 Then, run a script to crop the images. This will first create segmentation masks (under `dataset/ijmond_seg/test/masks/`) and then crop the large panoramas into smaller ones (under `dataset/ijmond_seg/test/cropped/`).
 ```sh
 python create_ijmond_seg_masks.py dataset/ijmond_seg/test/images/ dataset/ijmond_seg/test/_annotations.coco.json dataset/ijmond_seg/test/masks/
-python crop_ijmond_seg_and_create_npy.py dataset/ijmond_seg/test/images/ dataset/ijmond_seg/test/_annotations.coco.json dataset/ijmond_seg/test/masks/ dataset/ijmond_seg/test/cropped/
+python crop_ijmond_seg.py dataset/ijmond_seg/test/images/ dataset/ijmond_seg/test/_annotations.coco.json dataset/ijmond_seg/test/masks/ dataset/ijmond_seg/test/cropped/
 ```
 
 So, after that, the file structure should look like below:
 ```sh
 └── dataset # the root folder
     └── ijmond_seg # the folder that contains the IJmond segmentation dataset
-        └── cropped # all cropped images and masks
-            └── images # all cropped camera images
+        └── test
+            ├── cropped # all cropped images and masks
+                ├── images # all cropped camera images
+                    ├── XXX.jpg
+                    └── ...
+                ├── masks # all cropped masks
+                    ├── XXX.png
+                    └── ...
+                ├── test_with_mask.txt # paths for image-mask pairs (with masks)
+                ├── test_without_mask.txt # paths for image-mask pairs (with no masks)
+                └── metadata.json # metadata for each cropped image
+            ├── images # all camera images
                 ├── XXX.jpg
                 └── ...
-            └── images_npy # all cropped camera images in numpy format
-                ├── XXX.npy
-                └── ...
-            └── masks # all cropped masks
+            ├── masks # all masks
                 ├── XXX.png
                 └── ...
-            └── masks # all cropped masks in numpy format
-                ├── XXX.png
-                └── ...
-            └── test_with_mask.txt # paths for image-mask pairs (with masks)
-            └── test_without_mask.txt # paths for image-mask pairs (with no masks)
-            └── metadata.json # metadata for each cropped image
-        └── images # all camera images
-            ├── XXX.jpg
-            └── ...
-        └── masks # all masks
-            ├── XXX.png
-            └── ...
-        └── _annotations.coco.json # the annotation file
+            └── _annotations.coco.json # the annotation file
 ```
 
 Finally, split the IJmond dataset into training, validation, and test sets. Check the documentation in the `split_ijmond_seg.py` file to understand how we split the data.
@@ -157,7 +154,12 @@ Below is the explaination for split by timestamp:
 
 You can check if the cropped IJmond segmentation dataset can be loaded. This will create the `debug_plot_ijmond_seg_cropped_train_with_mask_20.png` and `debug_plot_ijmond_seg_cropped_train_with_mask_20_transformed.png` files for debugging.
 ```sh
-python smoke_dataset.py dataset/ijmond_seg/test/cropped/splits/split_by_timestamp/train/20_with_masks.txt ijmond_seg_cropped_train_with_mask_20
+python smoke_dataset.py dataset/ijmond_seg/test/cropped/splits/split_by_timestamp/train/20_with_masks.txt dataset/ijmond_seg/test/cropped/ ijmond_seg_cropped_train_with_mask_20
+```
+
+And lastly, run the following to mix expert and citizen data for experiments:
+```sh
+python create_data_mix.py
 ```
 
 ## Experiment Settings
@@ -210,7 +212,6 @@ IMPORTANT: All models start with the `Smoke5K-pretrained-UniMatch-V2` model, whi
 
 For this research question, we have the following base models:
 - `M-zeroshot`: no finetuning, which is exactly the `Smoke5K-pretrained-UniMatch-V2` model
-- `M-unsupervised`: finetuned using only unlabeled dataset `unlabeled`
 - `M-citizen`: finetuned using weakly-labeled and unlabeled datasets below:
   - `citizen_with_mask`
   - `citizen_without_mask` (using the 10% negative samples rule as mentioned before)
@@ -259,135 +260,37 @@ All models (except `M-zeroshot`) will use the following validation set for model
 - `expert_timestamp_val_with_masks`
 - `expert_timestamp_val_without_masks`
 
+The `M-zeroshot` model should use the test set in the SMOKE5K dataset for validation.
+
 All models will use the following test set for performance evaluation:
 - `expert_timestamp_test_with_masks`
 - `expert_timestamp_test_without_masks`
 
-We now describe the evaluation metrics for the experiments, which applies to both validation and test sets. In general, we want to design metrics that are suitable for citizen science. In the citizen science context, we have many community members with various levels of expertises and motivations to help us find smoke emissions that may need further inspections. So our core philosophy is that this model will be embedded in a human-in-the-loop system where humans can check its outputs frequently. This means that the model's role is to help people quickly filter smoke emission events. In this sense, we focus on getting a high recall (rather than high precision) since we do not want to miss events. This means that we will use the `F2-score` metric when computing pixel-level performance, which prioritize the recall, rather than `F1-score` that weights precision and recall evenly.
+## Evaluation Metrics
 
-Also, we focus more on the images with smoke (positive images) rather than negative images (i.e., the ones with no smoke). The rationality is that the model can be combined with a good image classification model that can remove many images with no smoke. In other words, the model is not meant to be used alone and should be integrated into a pipeline with many types of machine learning models. So in practice, in the community citizen science context, there is little need to pay attention on the images with no smoke. In this sense, we will use a higher weight for positive images and lower weight for negative images when computing the `IoU` metric (intersection over union) to evaluate the quality of the masks. We also only compute the `IoU` for smoke regions and not background regions to reflect our core philosophy of focusing on the performance of smoke plumes rather than the background.
+All models are evaluated using the `evaluate_new` function (implemented in `unimatch_v2/supervised.py`), which computes the following metrics on the smoke segmentation task.
 
-We use both the pixel-level `F2-score` metric and geometric-based `IoU` metric together. The `F2-score` metric gives us information about if smoke regions are well covered, and the `IoU` metric shows the quality of the mask (i.e., if the mask aligns well with the smoke). This combination gives us several advantages to diagnose models. In the best scenario, when the predicted mask aligns well with the ground truth smoke, both metrics will have a high value. In the worst scenario that the mask misses the ground truth, both metrics will have a low value. However, if the model is agreesive and produces a mask that covers a large region of the smoke but at the same time also generates a bunch of false positives (i.e., marking regions outside the ground truth smoke as smoke), we will get a slightly lower `F2-score` (because it considers less about false positives) and a much lower `IoU` (because the union now becomes large). This is fine for finding smoke because we see an obvious alert of smoke plume on the community side. But this is not a good model that can be used for estimating the amount of smoke (such as in the case that we want to correlate smoke and air quality sensing data).
+### Global metrics
 
-Also, when calculating `F2-score` and `IoU`, we first compute these metrics for each image and then average them together, and we call then `mF2` and `mIoU`. Why not using all the pixels across images? We think that it is important to treat each image independently. For example, if there is a large plume that covers almost the entire image, using a global way of computing the metrics will propagate a lot of errors into the final metric just based on mistakes from this single image, which is not fair. Notice that `mF2` and `mIoU` are different from the traditional definition of `mean F2` and `mean IoU`, where the averages are about averaging the metics across different class labels. In our case, we only consider the ground truth smoke (i.e., pixel value 1) and not background labels (i.e., pixel value 0), and we do the average across images.
+Global metrics are computed by accumulating true positives (TP), false positives (FP), and false negatives (FN) across all pixels in the entire test set, treating every pixel equally regardless of which image it belongs to.
 
-To reflect our design philosophy that we care more about postive images, we weight the results of positve and negative images differently. In other words, we calculate `mF2` and `mIoU` for both positve and negative images, resulting in four main metrics `mF2_smoke`, `mIoU_smoke`, `mF2_clear` (no smoke), and `mIoU_clear` (no smoke). We then calculate the final `mF2` by taking a weighted sum of `mF2_smoke` and `mF2_clear` (same logic for `mIoU_smoke`). We give positive images `mF2_smoke` more weight (`w_pos=0.8`) than negative images `mF2_clear` less weight (`w_neg=0.2`).
+- **gIoU** (Global Intersection over Union): $\frac{TP}{TP + FP + FN}$. Measures the overlap between the predicted and ground-truth smoke regions across all images.
+- **gF1** (Global F1 Score): $\frac{2 \cdot gPre \cdot gRec}{gPre + gRec}$. Harmonic mean of global precision and recall.
+- **gPre** (Global Precision): $\frac{TP}{TP + FP}$. Fraction of predicted smoke pixels that are actually smoke.
+- **gRec** (Global Recall): $\frac{TP}{TP + FN}$. Fraction of actual smoke pixels that are correctly predicted.
+- **gAccu** (Global Accuracy): $\frac{\text{correct pixels}}{\text{total pixels}}$. Overall pixel-level classification accuracy across all images.
 
-The following code is the implementation of the evaluation metrics. It is written in PyTorch syntax but may need adjustment for being used in the experiment pipeline. For model selection during validation, use only `mF2` and `mIoU`. First, pick several candidates (with different training epoch checkpoints) that have a good level of `mIoU`. Then, pick the one with the highest `mF2` from the candidates. This two stage filtering is designed to make sure that the model have a good mask quality and also a good recall (with also a small consideration of precision). For getting the final performance, report all the metrics that are returned from the function.
+### Per-image metrics
 
-```python
-def evaluate_new(model, dataloader, w_pos=0.8, w_neg=0.2, threshold=0.5, multiplier=None):
-    """
-    Calculates weighted mIoU, mF2, mRecall, and mPrecision.
-    """
-    model.eval()
+Per-image metrics are computed per positive image (i.e., images where the ground truth contains at least one smoke pixel) and then averaged. Negative images (no smoke in ground truth) are excluded from these metrics to avoid degenerate scores.
 
-    # Grouped storage for per-image metrics
-    smoke_f2s, smoke_ious, smoke_recalls, smoke_precisions = [], [], [], []
-    clear_f2s, clear_ious, clear_recalls, clear_precisions = [], [], [], []
-    smoke_accu, clear_accu = [], []
+- **mIoU** (Mean IoU): average IoU computed per positive image.
+- **mF1** (Mean F1): average F1 score computed per positive image.
 
-    smooth = 1e-7
+### False alarm metric
 
-    with torch.no_grad():
-        for images, masks, _ in dataloader:
-            images, masks = images.cuda(), masks.cuda()
+- **FAR** (False Alarm Rate): fraction of negative images (no smoke in ground truth) where the model incorrectly predicts a cluster of more than 10 smoke pixels. A lower FAR means fewer false detections on clean images.
 
-            if multiplier is not None:
-                ori_h, ori_w = images.shape[-2:]
-                if multiplier == 512:
-                    new_h, new_w = 512, 512
-                else:
-                    new_h, new_w = int(ori_h / multiplier + 0.5) * multiplier, int(ori_w / multiplier + 0.5) * multiplier
+### Model selection criterion
 
-                images = F.interpolate(images, (new_h, new_w), mode='bilinear', align_corners=True)
-
-            outputs = model(images)
-
-
-
-            if multiplier is not None:
-                outputs = F.interpolate(outputs, (ori_h, ori_w), mode='bilinear', align_corners=True)
-
-            preds = (outputs > threshold).float()
-            preds = preds.argmax(dim = 1)
-
-            intersection, union, target = \
-                intersectionAndUnion(preds.cpu().numpy(), masks.cpu().numpy(), 2, 255)
-
-            # --- CASE 1: NEGATIVE SAMPLE (Ground Truth is Empty) ---
-            if masks.cpu().sum() == 0:
-                score = 1.0 if preds.cpu().sum() == 0 else 0.0
-                clear_ious.append(score)
-                correct_pixels = (preds.cpu() == masks.cpu()).sum().item()
-                clear_accu.append(correct_pixels / preds.numel())
-            # --- CASE 2: POSITIVE SAMPLE (Smoke Present) ---
-            else:
-                iou_class = (intersection[1].sum() + smooth) / (union[1].sum() + smooth)
-                smoke_ious.append(iou_class)
-                correct_pixels = (preds.cpu() == masks.cpu()).sum().item()
-                smoke_accu.append(correct_pixels / preds.numel())
-
-            for p, m in zip(preds, masks):
-                # Pixel-level components
-                tp = (p * m).sum().item()
-                fp = (p * (1 - m)).sum().item()
-                fn = ((1 - p) * m).sum().item()
-                union = p.sum().item() + m.sum().item() - tp
-
-                precision = (tp + smooth) / (tp + fp + smooth)
-                recall = (tp + smooth) / (tp + fn + smooth)
-
-                # --- CASE 1: NEGATIVE SAMPLE (Ground Truth is Empty) ---
-                if m.sum() == 0:
-                    score = 1.0 if p.sum() == 0 else 0.0
-                    clear_f2s.append(score)
-                    clear_recalls.append(score)
-                    clear_precisions.append(score)
-
-                # --- CASE 2: POSITIVE SAMPLE (Smoke Present) ---
-                else:
-                    # F2 Score
-                    f2 = (5 * precision * recall) / ( 4 * precision + recall + smooth)
-                    smoke_f2s.append(f2)
-
-                    # Recall and Precision
-                    smoke_recalls.append(recall)
-                    smoke_precisions.append(precision)
-
-    # 1. Calculate the raw means for both groups
-    mF2_smoke = np.mean(smoke_f2s) if smoke_f2s else 0.0
-    mIoU_smoke = np.mean(smoke_ious) if smoke_ious else 0.0
-    mRec_smoke = np.mean(smoke_recalls) if smoke_recalls else 0.0
-    mPre_smoke = np.mean(smoke_precisions) if smoke_precisions else 0.0
-    mAccu_smoke = np.mean(smoke_accu) if smoke_accu else 0.0
-
-    mF2_clear = np.mean(clear_f2s) if clear_f2s else 0.0
-    mIoU_clear = np.mean(clear_ious) if clear_ious else 0.0
-    mRec_clear = np.mean(clear_recalls) if clear_recalls else 0.0
-    mPre_clear = np.mean(clear_precisions) if clear_precisions else 0.0
-    mAccu_clear = np.mean(clear_accu) if clear_accu else 0.0
-
-    # 2. Compute Weighted Final Metrics (The ones used for ranking)
-    weight_sum = w_pos + w_neg
-
-    results = {
-        "mIoU": (w_pos * mIoU_smoke + w_neg * mIoU_clear) / weight_sum,
-        "mF2":  (w_pos * mF2_smoke + w_neg * mF2_clear) / weight_sum,
-        "mRec": (w_pos * mRec_smoke + w_neg * mRec_clear) / weight_sum,
-        "mPre": (w_pos * mPre_smoke + w_neg * mPre_clear) / weight_sum,
-        "mAccu": (w_pos * mAccu_smoke + w_neg * mAccu_clear) / weight_sum,
-        "mF2_smoke": mF2_smoke,
-        "mIoU_smoke": mIoU_smoke,
-        "mRec_smoke": mRec_smoke,
-        "mPre_smoke": mPre_smoke,
-        "mAccu_smoke": mAccu_smoke,
-        "mF2_clear": mF2_clear,
-        "mIoU_clear": mIoU_clear,
-        "mRec_clear": mRec_clear,
-        "mPre_clear": mPre_clear,
-        "mAccu_clear": mAccu_clear
-    }
-
-    return results
-```
+During training, the model checkpoint with the best `gF1` on the validation set is selected as the final model for testing.

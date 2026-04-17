@@ -367,7 +367,8 @@ def main():
     # Plot the results
     if len(plot_data) > 0:
         print(f"\nPlotting results for {len(plot_data)} data points...")
-        plot_filename = "debug_plot_pseudo_masks.png"
+        os.makedirs("debug_plot", exist_ok=True)
+        plot_filename = "debug_plot/pseudo_masks.png"
         plot([plot_data], plot_filename, title=["Ground Truth Box (Yellow) + SAM Mask (Green)"])
 
 

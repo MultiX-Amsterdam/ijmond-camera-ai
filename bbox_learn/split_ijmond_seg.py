@@ -231,11 +231,13 @@ def write_val_test(ts: Dict[str, List[Dict]], base_dir: str) -> None:
     val_without = [e for e in ts["val"] if not e.get("mask")]
     write_list(os.path.join(base_dir, "val_with_masks.txt"), val_with, True)
     write_list(os.path.join(base_dir, "val_without_masks.txt"), val_without, False)
+    write_list(os.path.join(base_dir, "val.txt"), ts["val"], True)
 
     test_with = [e for e in ts["test"] if e.get("mask")]
     test_without = [e for e in ts["test"] if not e.get("mask")]
     write_list(os.path.join(base_dir, "test_with_masks.txt"), test_with, True)
     write_list(os.path.join(base_dir, "test_without_masks.txt"), test_without, False)
+    write_list(os.path.join(base_dir, "test.txt"), ts["test"], True)
 
 
 def build_metadata(split_dir: str) -> None:

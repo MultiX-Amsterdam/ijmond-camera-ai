@@ -1,9 +1,9 @@
 # arguments for setting up and training a model
 configuration: configs/ijmond.yaml
-smoke_dataset: datasets/citizen_with_mask.txt
-clear_dataset: datasets/citizen_without_mask.txt
-unlabeled_dataset: datasets/unlabeled.txt
-validation_dataset: datasets/expert_timestamp_val.txt
-test_dataset: datasets/expert_timestamp_test.txt
+smoke_dataset: ijmond_pseudo_masks/train_with_mask.txt
+clear_dataset: ijmond_pseudo_masks/train_without_mask.txt
+unlabeled_dataset: ijmond_vid/unlabeled.txt
+validation_dataset: ijmond_seg/test/cropped/splits/split_by_timestamp/val.txt
+test_dataset: ijmond_seg/test/cropped/splits/split_by_timestamp/test.txt
 test_model: best.pth
 pretrained_model: m-zeroshot

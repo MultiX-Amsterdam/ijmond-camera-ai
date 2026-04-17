@@ -118,5 +118,6 @@ if __name__ == "__main__":
             print(f"Sample img shape after transform: {st['img'].shape}")
             print(f"Sample img values after transform: {st['img'][0, 0:5, 0:5]}")
             print(f"Sample bbox after transform: {st['boxes']}")
-            plot([(s['img'], s['boxes']), (st['img'], st['boxes'])], "debug_plot_ijmondbox.png")
+            os.makedirs("debug_plot", exist_ok=True)
+            plot([(s['img'], s['boxes']), (st['img'], st['boxes'])], "debug_plot/ijmondbox.png")
             break

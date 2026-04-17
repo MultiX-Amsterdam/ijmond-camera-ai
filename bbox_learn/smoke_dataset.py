@@ -144,7 +144,9 @@ if __name__ == "__main__":
                     masks_tensor = torch.stack(masks_list)
                     data_to_plot.append((img, {"masks": masks_tensor}))
                     print(f"  -> Treated as {len(masks_list)} separate binary masks")
-    plot(data_to_plot, f"debug_plot_{dataset_name}.png")
+
+    os.makedirs("debug_plot", exist_ok=True)
+    plot(data_to_plot, f"debug_plot/{dataset_name}.png")
 
     # Keep the original sample checking for compatibility
     s = selected_samples[0] if selected_samples else None
@@ -203,7 +205,7 @@ if __name__ == "__main__":
                     transformed_data_to_plot.append((img, {"masks": masks_tensor}))
 
     # Plot the images and masks
-    plot(transformed_data_to_plot, f"debug_plot_{dataset_name}_transformed.png")
+    plot(transformed_data_to_plot, f"debug_plot/{dataset_name}_transformed.png")
 
     # Show transform comparison for first sample
     st = transformed_samples[0]

@@ -1,6 +1,6 @@
 # arguments for setting up and training a model
 configuration: configs/smoke5k.yaml
-smoke_dataset: datasets/smoke5k_train.txt
-validation_dataset: datasets/smoke5k_val.txt
-test_dataset: datasets/expert_timestamp_test.txt
+smoke_dataset: smoke5k/train/train.txt
+validation_dataset: smoke5k/test/test.txt
+test_dataset: ijmond_seg/test/cropped/splits/split_by_timestamp/test.txt
 test_model: best.pth
