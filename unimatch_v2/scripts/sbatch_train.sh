@@ -34,7 +34,7 @@
 #SBATCH --nodelist=ivi-cn032
 #SBATCH --cpus-per-task=32
 #SBATCH --gres=gpu:2
-#SBATCH --time=24:00:00
+#SBATCH --time=2:00:00
 #SBATCH --mem=185G
 #SBATCH --output=/dev/null
 #SBATCH --error=/dev/null
@@ -42,7 +42,7 @@
 #SBATCH --partition=all6000
 
 # ---- Training parameters (modify as needed) ---------------------------------
-exp="dinov2_base_sbatch"
+exp="dinov2_base_sbatch_testrun"
 unlabeled_sample_size=1500
 unlabeled_sample_seed=23838742
 
@@ -102,6 +102,8 @@ if [ "$NUM_GPUS" -gt 1 ]; then
     MASTER_ADDR=$(scontrol show hostnames "$SLURM_JOB_NODELIST" | head -n 1)
 fi
 
+RUN_TS=$(date +%Y%m%d_%H%M%S)
+
 for i in "${!MODELS[@]}"; do
     model="${MODELS[$i]}"
     method="${METHODS[$i]}"
@@ -128,7 +130,7 @@ for i in "${!MODELS[@]}"; do
             --port "$PORT" \
             --unlabeled-sample-size "$unlabeled_sample_size" \
             --unlabeled-sample-seed "$unlabeled_sample_seed" \
-            2>&1 | tee "${save_path}/out.log"
+            2>&1 | tee "${save_path}/out_${RUN_TS}.log"
     else
         python "${method}.py" \
             --training-config "$training_config" \
@@ -136,7 +138,7 @@ for i in "${!MODELS[@]}"; do
             --port "$PORT" \
             --unlabeled-sample-size "$unlabeled_sample_size" \
             --unlabeled-sample-seed "$unlabeled_sample_seed" \
-            2>&1 | tee "${save_path}/out.log"
+            2>&1 | tee "${save_path}/out_${RUN_TS}.log"
     fi
 
     exit_code=${PIPESTATUS[0]}

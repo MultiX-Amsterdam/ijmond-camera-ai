@@ -12,7 +12,7 @@ NUM_GPUS=${1:-1}
 PORT=${2:-9271}
 MASTER_ADDR=${3:-"localhost"}
 
-exp='dinov2_base_srun'
+exp='dinov2_base_srun_testrun'
 unlabeled_sample_size=1500
 unlabeled_sample_seed=23838742
 
@@ -57,6 +57,8 @@ METHODS=(
 # Move to the unimatch_v2 root so relative paths (splits/, exp/) resolve correctly
 cd "$(dirname "$0")/.." || exit 1
 
+RUN_TS=$(date +%Y%m%d_%H%M%S)
+
 for i in "${!MODELS[@]}"; do
     model="${MODELS[$i]}"
     method="${METHODS[$i]}"
@@ -83,7 +85,7 @@ for i in "${!MODELS[@]}"; do
             --port "$PORT" \
             --unlabeled-sample-size "$unlabeled_sample_size" \
             --unlabeled-sample-seed "$unlabeled_sample_seed" \
-            2>&1 | tee "${save_path}/out.log"
+            2>&1 | tee "${save_path}/out_${RUN_TS}.log"
     else
         conda run --no-capture-output -n ijmond-camera-ai python "${method}.py" \
             --training-config "$training_config" \
@@ -91,7 +93,7 @@ for i in "${!MODELS[@]}"; do
             --port "$PORT" \
             --unlabeled-sample-size "$unlabeled_sample_size" \
             --unlabeled-sample-seed "$unlabeled_sample_seed" \
-            2>&1 | tee "${save_path}/out.log"
+            2>&1 | tee "${save_path}/out_${RUN_TS}.log"
     fi
 
     exit_code=${PIPESTATUS[0]}
