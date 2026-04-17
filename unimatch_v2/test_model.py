@@ -14,7 +14,7 @@ import yaml
 
 from dataset.semi import SemiSmokeDataset
 from model.semseg.dpt import DPT
-from supervised import evaluate, evaluate_new
+from supervised import evaluate_new
 from util.classes import CLASSES
 from util.ohem import ProbOhemCrossEntropy2d
 from util.utils import count_params, init_log, AverageMeter
@@ -150,7 +150,7 @@ def main():
         cfg['data_root'],
         'test',
         None,
-        training_cfg['test_dataset']
+        id_path=training_cfg['test_dataset']
     )
 
     testsampler = torch.utils.data.distributed.DistributedSampler(testset)
