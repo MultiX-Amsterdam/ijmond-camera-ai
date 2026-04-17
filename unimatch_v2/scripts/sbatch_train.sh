@@ -47,7 +47,7 @@ unlabeled_sample_size=1500
 unlabeled_sample_seed=23838742
 
 # Number of GPUs per node must match --gres=gpu:N in the SBATCH header above
-NUM_GPUS=4
+NUM_GPUS=2
 PORT=9271
 
 MODELS=(
