@@ -11,6 +11,9 @@
 #     scontrol show job <job_id>
 #   Cancel a job:
 #     scancel <job_id>
+#   Check node status:
+#     sinfo -N -o "%20N %10c %10m %25G %10T %P"
+#     sinfo -n ivi-cn032 -o "%N %C %e %G"
 #
 # BEFORE SUBMITTING:
 #   1. Set NUM_GPUS below and update --gres=gpu:N in the header accordingly.
@@ -26,19 +29,20 @@
 #   Model splits    : splits/   (e.g., m-zeroshot.yaml, m-expert.yaml)
 # =============================================================================
 
-#SBATCH --job-name=sbatch_ijmond_ai_pipeline
+#SBATCH --job-name=sbatch_ijmond_ai_train
 #SBATCH --ntasks=1
-#SBATCH --nodelist=ivi-cn015
-#SBATCH --cpus-per-task=48
-#SBATCH --gres=gpu:4
-#SBATCH --time=1:00:00
-#SBATCH --mem=0
+#SBATCH --nodelist=ivi-cn032
+#SBATCH --cpus-per-task=32
+#SBATCH --gres=gpu:2
+#SBATCH --time=24:00:00
+#SBATCH --mem=185G
 #SBATCH --output=/dev/null
 #SBATCH --error=/dev/null
-#SBATCH --partition=all
+#SBATCH --account=all6000users
+#SBATCH --partition=all6000
 
 # ---- Training parameters (modify as needed) ---------------------------------
-exp="dinov2_small"
+exp="dinov2_base_sbatch"
 unlabeled_sample_size=1500
 unlabeled_sample_seed=23838742
 

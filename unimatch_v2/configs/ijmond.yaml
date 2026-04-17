@@ -8,7 +8,7 @@ base_size: 728  # long side rescaled to this before scale jitter (2x crop_size)
 # arguments for training
 epochs: 2
 batch_size: 32 # per GPU (decrease this if using multiple GPUs to avoid OOM)
-lr: 0.00002 # use 0.000005 for single GPU and 0.00001 for 2 GPUs and 0.00002 for 4 GPUs
+lr: 0.00001 # use 0.000005 for single GPU and 0.00001 for 2 GPUs and 0.00002 for 4 GPUs
 lr_multi: 40.0
 criterion:
   name: CELoss
@@ -18,5 +18,5 @@ conf_thresh: 0.95
 
 # arguments for model
 model: dpt
-backbone: dinov2_small
+backbone: dinov2_base
 lock_backbone: True

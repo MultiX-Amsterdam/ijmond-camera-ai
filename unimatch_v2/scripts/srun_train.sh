@@ -4,15 +4,15 @@
 # Usage: bash scripts/srun_train.sh [NUM_GPUS [PORT [MASTER_ADDR]]]
 #
 # Before running, allocate a node with srun:
-#   srun -u --pty --nodelist=ivi-cn015 --gres=gpu:4 --mem=0 --cpus-per-task=48 --time=4:00:00 -D $(pwd) bash -i
+#   srun -u --pty --nodelist=ivi-cn002 --gres=gpu:2 --mem=120G --cpus-per-task=24 --time=2:00:00 -D $(pwd) bash -i
 # Then run:
-#   bash scripts/srun_train.sh 4
+#   bash scripts/srun_train.sh 2
 
 NUM_GPUS=${1:-1}
 PORT=${2:-9271}
 MASTER_ADDR=${3:-"localhost"}
 
-exp='dinov2_small'
+exp='dinov2_base_srun'
 unlabeled_sample_size=1500
 unlabeled_sample_seed=23838742
 
