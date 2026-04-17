@@ -5,19 +5,14 @@ import os
 import pprint
 
 import torch
-from torch import nn
 import torch.backends.cudnn as cudnn
-from torch.optim import AdamW
-from torch.utils.data import DataLoader, SubsetRandomSampler
-from torch.utils.tensorboard import SummaryWriter
+from torch.utils.data import DataLoader
 import yaml
 
 from dataset.semi import SemiSmokeDataset
 from model.semseg.dpt import DPT
 from supervised import evaluate_new
-from util.classes import CLASSES
-from util.ohem import ProbOhemCrossEntropy2d
-from util.utils import count_params, init_log, AverageMeter
+from util.utils import count_params, init_log
 from util.dist_helper import setup_distributed
 
 parser = argparse.ArgumentParser(description='UniMatch V2: Pushing the Limit of Semi-Supervised Semantic Segmentation')
@@ -49,8 +44,6 @@ def main():
 
         logger.info('{}\n'.format(pprint.pformat(all_args)))
 
-        writer = SummaryWriter(args.save_path)
-
         os.makedirs(args.save_path, exist_ok=True)
 
     cudnn.enabled = True
@@ -75,31 +68,13 @@ def main():
     if cfg['lock_backbone']:
         model.lock_backbone()
 
-    optimizer = AdamW(
-        [
-            {
-                'params': [p for p in model.backbone.parameters() if p.requires_grad],
-                'lr': cfg['lr']
-            },
-            {
-                'params': [param for name, param in model.named_parameters() if 'backbone' not in name],
-                'lr': cfg['lr'] * cfg['lr_multi']
-            }
-        ],
-        lr=cfg['lr'],
-        betas=(0.9, 0.999),
-        weight_decay=0.01
-    )
-
     if rank == 0:
         logger.info('Total params: {:.1f}M'.format(count_params(model)))
-        logger.info('Encoder params: {:.1f}M'.format(count_params(model.backbone)))
-        logger.info('Decoder params: {:.1f}M\n'.format(count_params(model.head)))
 
     local_rank = int(os.environ.get("LOCAL_RANK", 0))
     model = torch.nn.SyncBatchNorm.convert_sync_batchnorm(model)
 
-    model.cuda()
+    model.cuda(local_rank)
 
     model = torch.nn.parallel.DistributedDataParallel(
         model,
@@ -109,9 +84,12 @@ def main():
         find_unused_parameters=True
     )
 
-    model_ema = deepcopy(model)
+    model_ema = deepcopy(model.module)
 
     model_ema.eval()
+
+    for param in model_ema.parameters():
+        param.requires_grad = False
 
     if (test_model := training_cfg.get("test_model", None)) is None:
         raise Exception("test model not specified")
@@ -127,23 +105,19 @@ def main():
     model.load_state_dict(model_checkpoint["model"])
     model.eval()
 
-    if 'model_ema' in model_checkpoint:
-        model_ema.load_state_dict(model_checkpoint['model_ema'])
-        model_ema.eval()
-
     logger.info("Loaded %s at epoch %s" % (test_model_path, model_checkpoint['epoch']))
 
-    for param in model_ema.parameters():
-        param.requires_grad = False
-
-    if cfg['criterion']['name'] == 'CELoss':
-        criterion_l = nn.CrossEntropyLoss(**cfg['criterion']['kwargs']).cuda(local_rank)
-    elif cfg['criterion']['name'] == 'OHEM':
-        criterion_l = ProbOhemCrossEntropy2d(**cfg['criterion']['kwargs']).cuda(local_rank)
+    # Load EMA weights from companion file
+    has_ema = False
+    ema_filename = test_model.replace('best.pth', 'best_ema.pth')
+    ema_path = os.path.join(args.save_path, ema_filename)
+    if ema_filename != test_model and os.path.exists(ema_path):
+        ema_checkpoint = torch.load(ema_path, map_location='cpu', weights_only=False)
+        model_ema.load_state_dict(ema_checkpoint["checkpoint"]["model_ema"])
+        has_ema = True
+        logger.info("Loaded EMA from %s at epoch %s" % (ema_path, ema_checkpoint["checkpoint"]["epoch"]))
     else:
-        raise NotImplementedError('%s criterion is not implemented' % cfg['criterion']['name'])
-
-    criterion_u = nn.CrossEntropyLoss(reduction='none').cuda(local_rank)
+        logger.warning("No EMA checkpoint found at %s, skipping EMA evaluation" % ema_path)
 
     testset = SemiSmokeDataset(
         cfg['dataset'],
@@ -153,32 +127,32 @@ def main():
         id_path=training_cfg['test_dataset']
     )
 
-    testsampler = torch.utils.data.distributed.DistributedSampler(testset)
-
     testloader = DataLoader(
         testset,
         batch_size=1,
         pin_memory=True,
         num_workers=1,
         drop_last=False,
-        sampler=testsampler
+        shuffle=False
     )
 
-    evaluation = evaluate_new(model, testloader, multiplier=14)
-    evaluation_ema = evaluate_new(model_ema, testloader, multiplier=14)
-
     if rank == 0:
+        evaluation = evaluate_new(model, testloader, multiplier=14)
+
         logger.info('***** Evaluation *****')
 
         for k, v in evaluation.items():
             logger.info(f"\t{k}: {v:.4f}")
 
-        print()
+        if has_ema:
+            evaluation_ema = evaluate_new(model_ema, testloader, multiplier=14)
 
-        logger.info('***** Evaluation EMA *****')
+            print()
 
-        for k, v in evaluation_ema.items():
-            logger.info(f"\t{k}: {v:.4f}")
+            logger.info('***** Evaluation EMA *****')
+
+            for k, v in evaluation_ema.items():
+                logger.info(f"\t{k}: {v:.4f}")
 
 
 if __name__ == '__main__':

@@ -243,7 +243,7 @@ We only use the timestamp split for this research question with one additional m
 
 The expert model `M-expert` serves as a reference point in the situation without the help of citizens. The citizen model `M-citizen` represents the situation with only the help from citizens. Model `M-zeroshot` is the zero-shot case without any finetuning. We also have the expert-citizen collaboration model, which is `M-mix-100` in the next research question. By comparing the performance of these models, we know if citizen-contributed data is useful and to what extent.
 
-In this setting, `M-zeroshot` will be the lower bound of performance, and `M-mix-100` will be the upper bound of performance.
+In this setting, `M-zeroshot` will be the lower bound of performance, and `M-expert` (or `M-mix-100`) will be the upper bound of performance.
 
 ### RQ2: How much contribution from the experts is needed?
 
@@ -260,7 +260,7 @@ We use the following models for this experiment:
 
 The placeholder `{P}` can be `100`, `80`, `60`, `40`, or `20`. For example, model `M-mix-100` uses `mix_timestamp_train_100_with_masks` (which means combining `expert_timestamp_train_100_with_masks` and `citizen_with_mask` datasets), `mix_timestamp_train_100_without_masks`, and `unlabeled` datasets ffor finetuning.
 
-So, we have the `M-mix-100`, `M-mix-80`, `M-mix-60`, `M-mix-40`, `M-mix-20`, and a base model `M-citizen` (which can be considered `M-mix-0`) from the previous research question for comparison. By doing so, we know the effect of adding various levels of expert contribution. We anticipate that `M-mix-100` will be our best model, which serves as the upper bound of performance.
+So, we have the `M-mix-100`, `M-mix-80`, `M-mix-60`, `M-mix-40`, `M-mix-20`, and a base model `M-citizen` (which can be considered `M-mix-0`) from the previous research question for comparison. By doing so, we know the effect of adding various levels of expert contribution. We anticipate that `M-mix-100` will be our best model, which serves as the upper bound of performance. We hope that the performance of `M-mix-100` will be better than `M-expert`. If not, it suggests that the pseudo masks may be noisy.
 
 ### Ablation studies
 

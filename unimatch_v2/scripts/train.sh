@@ -1,47 +1,113 @@
 #!/bin/bash
 
+# Training script: runs all experiments in sequence.
+# Each entry is: "<model> <method>"
+# Usage: bash scripts/train.sh [NUM_GPUS [PORT [MASTER_ADDR]]]
+#   NUM_GPUS     number of GPUs per node (default: 1)
+#   PORT         master port for distributed training (default: 9271)
+#   MASTER_ADDR  master address for distributed training (default: localhost)
+# Example usage:
+#   bash scripts/train.sh
+
 # modify these arguments if you want to try other splits or methods
 # method: ['unimatch_v2', 'supervised', 'test_model']
 # exp: just for specifying the 'save_path'
 # model: ['m-zeroshot', 'm-citizen', ...]. Please check directory './splits' for available model splits
 
-model='m-zeroshot'
-method='supervised'
+NUM_GPUS=${1:-1}
+PORT=${2:-9271}
+MASTER_ADDR=${3:-"localhost"}
+
 exp='dinov2_small'
 unlabeled_sample_size=1500
 unlabeled_sample_seed=23838742
 
-training_config=splits/$model.yaml
-save_path=exp/$exp/$model
+MODELS=(
+    "m-zeroshot"
+    "m-zeroshot"
+    "m-citizen"
+    "m-citizen"
+    "m-expert"
+    "m-expert"
+    "m-mix-20"
+    "m-mix-20"
+    "m-mix-40"
+    "m-mix-40"
+    "m-mix-60"
+    "m-mix-60"
+    "m-mix-80"
+    "m-mix-80"
+    "m-mix-100"
+    "m-mix-100"
+)
 
-mkdir -p $save_path
+METHODS=(
+    "supervised"
+    "test_model"
+    "unimatch_v2"
+    "test_model"
+    "unimatch_v2"
+    "test_model"
+    "unimatch_v2"
+    "test_model"
+    "unimatch_v2"
+    "test_model"
+    "unimatch_v2"
+    "test_model"
+    "unimatch_v2"
+    "test_model"
+    "unimatch_v2"
+    "test_model"
+)
 
-# Parse arguments
-NUM_GPUS=${1:-1}
-PORT=${2:-9271}
-LAUNCHER=${3:-"torch.distributed.launch"}  # torchrun or torch_distributed_launch
-NNODES=${4:-1}
-RANK=${5:-0}
-MASTER_ADDR=${6:-"localhost"}
+# Move to the unimatch_v2 root so relative paths (splits/, exp/) resolve correctly
+cd "$(dirname "$0")/.." || exit 1
 
-## For distributed launch (multiple GPUs) uncomment the following lines and comment out single GPU launch
+for i in "${!MODELS[@]}"; do
+    model="${MODELS[$i]}"
+    method="${METHODS[$i]}"
 
-#python -m $LAUNCHER \
-#    --nproc_per_node=$NUM_GPUS \
-#    --master_addr=$MASTER_ADDR \
-#    --master_port=$PORT \
-#    $method.py \
-#    --training-config $training_config \
-#    --save-path $save_path
-#    --port $PORT
-#    --unlabeled-sample-size $unlabeled_sample_size \
-#    --unlabeled-sample-seed $unlabeled_sample_seed 2>&1 | tee $save_path/out.log
+    training_config="splits/${model}.yaml"
+    save_path="exp/${exp}/${model}"
 
-## Single GPU launch
+    mkdir -p "$save_path"
 
-python $method.py \
-    --training-config $training_config \
-    --save-path $save_path \
-    --port $PORT \
-    --unlabeled-sample-size $unlabeled_sample_size \
-    --unlabeled-sample-seed $unlabeled_sample_seed 2>&1 | tee $save_path/out.log
+    echo "========================================================"
+    echo "Running: model=${model}  method=${method}  gpus=${NUM_GPUS}"
+    echo "  training_config=${training_config}"
+    echo "  save_path=${save_path}"
+    echo "========================================================"
+
+    if [ "$NUM_GPUS" -gt 1 ]; then
+        torchrun \
+            --nproc_per_node="$NUM_GPUS" \
+            --master_addr="$MASTER_ADDR" \
+            --master_port="$PORT" \
+            "${method}.py" \
+            --training-config "$training_config" \
+            --save-path "$save_path" \
+            --port "$PORT" \
+            --unlabeled-sample-size "$unlabeled_sample_size" \
+            --unlabeled-sample-seed "$unlabeled_sample_seed" \
+            2>&1 | tee "${save_path}/out.log"
+    else
+        python "${method}.py" \
+            --training-config "$training_config" \
+            --save-path "$save_path" \
+            --port "$PORT" \
+            --unlabeled-sample-size "$unlabeled_sample_size" \
+            --unlabeled-sample-seed "$unlabeled_sample_seed" \
+            2>&1 | tee "${save_path}/out.log"
+    fi
+
+    exit_code=${PIPESTATUS[0]}
+    if [ "$exit_code" -ne 0 ]; then
+        echo "ERROR: ${model}/${method} failed with exit code ${exit_code}. Stopping pipeline."
+        exit "$exit_code"
+    fi
+
+    echo "Done: ${model}/${method}"
+    echo ""
+done
+
+echo "All experiments completed successfully."

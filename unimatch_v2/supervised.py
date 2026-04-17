@@ -314,19 +314,24 @@ def main():
     iters = 0
     total_iters = len(trainloader) * cfg['epochs']
     best_epoch = -1
+    best_epoch_ema = -1
     best_eval = None
     best_eval_ema = None
     epoch = -1
 
-    # if os.path.exists(os.path.join(args.save_path, 'latest.pth')):
-    #     checkpoint = torch.load(os.path.join(args.save_path, 'latest.pth'), map_location='cpu', weights_only=False)
-    #     model.load_state_dict(checkpoint['model'])
-    #     optimizer.load_state_dict(checkpoint['optimizer'])
-    #     epoch = checkpoint['epoch']
-    #     previous_best = checkpoint['previous_best']
+    if os.path.exists(os.path.join(args.save_path, 'latest.pth')):
+        checkpoint = torch.load(os.path.join(args.save_path, 'latest.pth'), map_location='cpu', weights_only=False)
+        model.load_state_dict(checkpoint['model'])
+        model_ema.load_state_dict(checkpoint['model_ema'])
+        optimizer.load_state_dict(checkpoint['optimizer'])
+        epoch = checkpoint['epoch']
+        best_epoch = checkpoint['best_epoch']
+        best_epoch_ema = checkpoint['best_epoch_ema']
+        best_eval = checkpoint['best_eval']
+        best_eval_ema = checkpoint['best_eval_ema']
 
-    #     if rank == 0:
-    #         logger.info('************ Load from checkpoint at epoch %i\n' % epoch)
+        if rank == 0:
+            logger.info('************ Resumed from checkpoint at epoch %i\n' % epoch)
 
     for epoch in range(epoch + 1, cfg['epochs']):
         if rank == 0:
@@ -349,6 +354,26 @@ def main():
                         best_eval["mIoU"],
                         best_eval["mF1"],
                         best_eval["FAR"]
+                    )
+                )
+                logger.info(
+                    'Current Epoch: {}, LR: {:.7f} | '
+                    'Best Epoch EMA: {}, '
+                    'gIoU: {:.4f}, '
+                    'gF1: {:.4f}, '
+                    'gAccu: {:.4f}, '
+                    'mIoU: {:.4f}, '
+                    'mF1: {:.4f}, '
+                    'FAR: {:.4f}'.format(
+                        epoch,
+                        optimizer.param_groups[0]['lr'],
+                        best_epoch_ema,
+                        best_eval_ema["gIoU"],
+                        best_eval_ema["gF1"],
+                        best_eval_ema["gAccu"],
+                        best_eval_ema["mIoU"],
+                        best_eval_ema["mF1"],
+                        best_eval_ema["FAR"]
                     )
                 )
             else:
@@ -397,7 +422,7 @@ def main():
                 writer.add_scalar('train/loss_all', loss.item(), iters)
                 writer.add_scalar('train/lr', lr, iters)
 
-            if (i % (len(trainloader) // 8) == 0) and (rank == 0):
+            if (i % max(len(trainloader) // 8, 1) == 0) and (rank == 0):
                 logger.info('Iters: {:}, LR: {:.7f}, Total loss: {:.3f}'.format(i, optimizer.param_groups[0]['lr'], total_loss.avg))
 
         if rank == 0:
@@ -445,24 +470,34 @@ def main():
             if best_eval is None or evaluation["gF1"] > best_eval["gF1"]:
                 best_epoch = epoch
                 best_eval = {k: v for k, v in evaluation.items()}
-                best_eval["checkpoint"] = {
+                save_dict = {**best_eval, "checkpoint": {
                     "model": model.state_dict(),
                     "optimizer": optimizer.state_dict(),
                     "epoch": epoch
-                }
+                }}
+                torch.save(save_dict, os.path.join(args.save_path, "best.pth"))
 
             if best_eval_ema is None or evaluation_ema["gF1"] > best_eval_ema["gF1"]:
+                best_epoch_ema = epoch
                 best_eval_ema = {k: v for k, v in evaluation_ema.items()}
-                best_eval_ema["checkpoint"] = {
+                save_dict_ema = {**best_eval_ema, "checkpoint": {
                     "model_ema": model_ema.state_dict(),
                     "epoch": epoch
-                }
+                }}
+                torch.save(save_dict_ema, os.path.join(args.save_path, "best_ema.pth"))
+
+            torch.save({
+                'model': model.state_dict(),
+                'model_ema': model_ema.state_dict(),
+                'optimizer': optimizer.state_dict(),
+                'epoch': epoch,
+                'best_epoch': best_epoch,
+                'best_epoch_ema': best_epoch_ema,
+                'best_eval': best_eval,
+                'best_eval_ema': best_eval_ema,
+            }, os.path.join(args.save_path, 'latest.pth'))
 
         dist.barrier()
-
-    if rank == 0:
-        torch.save(best_eval, os.path.join(args.save_path, "best.pth"))
-        torch.save(best_eval_ema, os.path.join(args.save_path, "best_ema.pth"))
 
 
 if __name__ == '__main__':

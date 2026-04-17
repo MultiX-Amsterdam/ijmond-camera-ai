@@ -108,7 +108,7 @@ def main():
         find_unused_parameters=True
     )
 
-    model_ema = deepcopy(model)
+    model_ema = deepcopy(model.module)
 
     model_ema.eval()
 
@@ -123,7 +123,10 @@ def main():
             )
 
             model.load_state_dict(checkpoint["checkpoint"]["model"])
-            # model_ema.load_state_dict(checkpoint['model_ema'])
+
+            # Load pretrained weights into model_ema (strip module. prefix for non-DDP model_ema)
+            ema_state = {k.replace('module.', '', 1): v for k, v in checkpoint["checkpoint"]["model"].items()}
+            model_ema.load_state_dict(ema_state)
 
             logger.info("Loaded %s at epoch %s" % (pretrained_best_pth, checkpoint["checkpoint"]["epoch"]))
 
@@ -149,7 +152,7 @@ def main():
 
     current_nsample = len(trainset_u)
 
-    if args.unlabeled_sample_size > 0 and args.unlabeled_sample_size < current_nsample:
+    if args.unlabeled_sample_size is not None and args.unlabeled_sample_size > 0 and args.unlabeled_sample_size < current_nsample:
         current_nsample = args.unlabeled_sample_size
 
     if current_nsample < len(trainset_u):
@@ -245,35 +248,31 @@ def main():
         shuffle=False
     )
 
-    total_iters = (current_nsample or len(trainloader_u)) * cfg['epochs']
-    best_evaluations = {}
+    total_iters = len(trainloader_u) * cfg['epochs']
     best_epoch = -1
-    best_iou = 0.0
-    best_f1 = 0.0
-    best_accu = 0.0
-    best_miou = 0.0
-    best_mf1 = 0.0
-    best_far = 0.0
+    best_epoch_ema = -1
+    best_eval = None
+    best_eval_ema = None
     epoch = -1
 
-    # if os.path.exists(os.path.join(args.save_path, 'latest.pth')):
-    #     checkpoint = torch.load(os.path.join(args.save_path, 'latest.pth'), map_location='cpu', weights_only=False)
+    if os.path.exists(os.path.join(args.save_path, 'latest.pth')):
+        checkpoint = torch.load(os.path.join(args.save_path, 'latest.pth'), map_location='cpu', weights_only=False)
+        model.load_state_dict(checkpoint['model'])
+        model_ema.load_state_dict(checkpoint['model_ema'])
+        optimizer.load_state_dict(checkpoint['optimizer'])
+        epoch = checkpoint['epoch']
+        best_epoch = checkpoint['best_epoch']
+        best_epoch_ema = checkpoint['best_epoch_ema']
+        best_eval = checkpoint['best_eval']
+        best_eval_ema = checkpoint['best_eval_ema']
 
-    #     model.load_state_dict(checkpoint['model'])
-    #     model_ema.load_state_dict(checkpoint['model_ema'])
-    #     optimizer.load_state_dict(checkpoint['optimizer'])
-
-    #     epoch = checkpoint['epoch']
-    #     previous_best_iou = checkpoint['previous_best_iou']
-    #     previous_best_acc = checkpoint['previous_best_acc']
-    #     previous_best_ema_iou = checkpoint['previous_best_ema_iou']
-    #     previous_best_ema_acc = checkpoint['previous_best_ema_acc']
-    #     best_epoch = checkpoint['best_epoch']
-    #     best_epoch_ema = checkpoint['best_epoch_ema']
+        if rank == 0:
+            logger.info('************ Resumed from checkpoint at epoch %i\n' % epoch)
 
     for epoch in range(epoch + 1, cfg['epochs']):
         if rank == 0:
-            logger.info(
+            if best_eval is not None:
+                logger.info(
                     'Current Epoch: {}, LR: {:.7f} | '
                     'Best Epoch: {}, '
                     'gIoU: {:.4f}, '
@@ -285,14 +284,42 @@ def main():
                         epoch,
                         optimizer.param_groups[0]['lr'],
                         best_epoch,
-                        best_iou,
-                        best_f1,
-                        best_accu,
-                        best_miou,
-                        best_mf1,
-                        best_far
+                        best_eval["gIoU"],
+                        best_eval["gF1"],
+                        best_eval["gAccu"],
+                        best_eval["mIoU"],
+                        best_eval["mF1"],
+                        best_eval["FAR"]
                     )
-            )
+                )
+                logger.info(
+                    'Current Epoch: {}, LR: {:.7f} | '
+                    'Best Epoch EMA: {}, '
+                    'gIoU: {:.4f}, '
+                    'gF1: {:.4f}, '
+                    'gAccu: {:.4f}, '
+                    'mIoU: {:.4f}, '
+                    'mF1: {:.4f}, '
+                    'FAR: {:.4f}'.format(
+                        epoch,
+                        optimizer.param_groups[0]['lr'],
+                        best_epoch_ema,
+                        best_eval_ema["gIoU"],
+                        best_eval_ema["gF1"],
+                        best_eval_ema["gAccu"],
+                        best_eval_ema["mIoU"],
+                        best_eval_ema["mF1"],
+                        best_eval_ema["FAR"]
+                    )
+                )
+            else:
+                logger.info(
+                    'Current Epoch: {}, LR: {:.7f} | '
+                    'Best Epoch: N/A'.format(
+                        epoch,
+                        optimizer.param_groups[0]['lr']
+                    )
+                )
 
         total_loss = AverageMeter()
         total_loss_x = AverageMeter()
@@ -300,10 +327,12 @@ def main():
         total_mask_ratio = AverageMeter()
 
         trainloader_smoke.sampler.set_epoch(epoch)
+        if isinstance(trainsampler_u, torch.utils.data.distributed.DistributedSampler):
+            trainsampler_u.set_epoch(epoch)
 
-        combined_loader = map(
-            lambda batch: map(lambda pair: torch.cat(pair), zip(*batch)),
-            zip(trainloader_smoke, cycle(iter(trainloader_clear)))
+        combined_loader = (
+            tuple(torch.cat(pair) for pair in zip(*batch))
+            for batch in zip(trainloader_smoke, cycle(iter(trainloader_clear)))
         )
 
         loader = zip(combined_loader, trainloader_u)
@@ -327,10 +356,10 @@ def main():
                 conf_u_w = pred_u_w.softmax(dim=1).max(dim=1)[0]
                 mask_u_w = pred_u_w.argmax(dim=1)
 
-            img_u_s1[cutmix_box1.unsqueeze(1).expand(img_u_s1.shape) == 1] = img_u_s1.flip(0)[
-                cutmix_box1.unsqueeze(1).expand(img_u_s1.shape) == 1]
-            img_u_s2[cutmix_box2.unsqueeze(1).expand(img_u_s2.shape) == 1] = img_u_s2.flip(0)[
-                cutmix_box2.unsqueeze(1).expand(img_u_s2.shape) == 1]
+            cutmix_mask1 = cutmix_box1.unsqueeze(1).expand(img_u_s1.shape) == 1
+            img_u_s1 = torch.where(cutmix_mask1, img_u_s1.flip(0), img_u_s1)
+            cutmix_mask2 = cutmix_box2.unsqueeze(1).expand(img_u_s2.shape) == 1
+            img_u_s2 = torch.where(cutmix_mask2, img_u_s2.flip(0), img_u_s2)
 
             pred_x = model(img_x)
             pred_u_s1, pred_u_s2 = model(torch.cat((img_u_s1, img_u_s2)), comp_drop=True).chunk(2)
@@ -350,11 +379,11 @@ def main():
 
             loss_u_s1 = criterion_u(pred_u_s1, mask_u_w_cutmixed1)
             loss_u_s1 = loss_u_s1 * ((conf_u_w_cutmixed1 >= cfg['conf_thresh']) & (ignore_mask_cutmixed1 != 255))
-            loss_u_s1 = loss_u_s1.sum() / (ignore_mask_cutmixed1 != 255).sum().item()
+            loss_u_s1 = loss_u_s1.sum() / max((ignore_mask_cutmixed1 != 255).sum().item(), 1)
 
             loss_u_s2 = criterion_u(pred_u_s2, mask_u_w_cutmixed2)
             loss_u_s2 = loss_u_s2 * ((conf_u_w_cutmixed2 >= cfg['conf_thresh']) & (ignore_mask_cutmixed2 != 255))
-            loss_u_s2 = loss_u_s2.sum() / (ignore_mask_cutmixed2 != 255).sum().item()
+            loss_u_s2 = loss_u_s2.sum() / max((ignore_mask_cutmixed2 != 255).sum().item(), 1)
 
             loss_u_s = (loss_u_s1 + loss_u_s2) / 2.0
 
@@ -367,9 +396,9 @@ def main():
             total_loss.update(loss.item())
             total_loss_x.update(loss_x.item())
             total_loss_s.update(loss_u_s.item())
-            mask_ratio = ((conf_u_w >= cfg['conf_thresh']) & (ignore_mask != 255)).sum().item() / (
-                    ignore_mask != 255).sum()
-            total_mask_ratio.update(mask_ratio.item())
+            mask_ratio = ((conf_u_w >= cfg['conf_thresh']) & (ignore_mask != 255)).sum().item() / max(
+                    (ignore_mask != 255).sum().item(), 1)
+            total_mask_ratio.update(mask_ratio)
 
             iters = epoch * len(trainloader_u) + i
             lr = cfg['lr'] * (1 - iters / total_iters) ** 0.9
@@ -378,10 +407,13 @@ def main():
 
             ema_ratio = min(1 - 1 / (iters + 1), 0.996)
 
-            for param, param_ema in zip(model.parameters(), model_ema.parameters()):
-                param_ema.copy_(param_ema * ema_ratio + param.detach() * (1 - ema_ratio))
-            for buffer, buffer_ema in zip(model.buffers(), model_ema.buffers()):
-                buffer_ema.copy_(buffer_ema * ema_ratio + buffer.detach() * (1 - ema_ratio))
+            for param, param_ema in zip(model.module.parameters(), model_ema.parameters()):
+                param_ema.data.lerp_(param.data, 1.0 - ema_ratio)
+            for buffer, buffer_ema in zip(model.module.buffers(), model_ema.buffers()):
+                if buffer.dtype.is_floating_point:
+                    buffer_ema.data.lerp_(buffer.data, 1.0 - ema_ratio)
+                else:
+                    buffer_ema.data.copy_(buffer.data)
 
             if rank == 0:
                 writer.add_scalar('train/loss_all', loss.item(), iters)
@@ -389,7 +421,7 @@ def main():
                 writer.add_scalar('train/loss_s', loss_u_s.item(), iters)
                 writer.add_scalar('train/mask_ratio', mask_ratio, iters)
 
-            if (i % (len(trainloader_u) // 8) == 0) and (rank == 0):
+            if (i % max(len(trainloader_u) // 8, 1) == 0) and (rank == 0):
                 logger.info('Iters: {:}, LR: {:.7f}, Total loss: {:.3f}, Loss x: {:.3f}, Loss s: {:.3f}, Mask ratio: '
                             '{:.3f}'.format(i, optimizer.param_groups[0]['lr'], total_loss.avg, total_loss_x.avg,
                                             total_loss_s.avg, total_mask_ratio.avg))
@@ -436,52 +468,37 @@ def main():
             writer.add_scalar('eval/mF1_EMA', evaluation_ema["mF1"], epoch)
             writer.add_scalar('eval/FAR_EMA', evaluation_ema["FAR"], epoch)
 
-            evaluation["checkpoint"] = {
+            if best_eval is None or evaluation["gF1"] > best_eval["gF1"]:
+                best_epoch = epoch
+                best_eval = {k: v for k, v in evaluation.items()}
+                save_dict = {**best_eval, "checkpoint": {
+                    "model": model.state_dict(),
+                    "optimizer": optimizer.state_dict(),
+                    "epoch": epoch
+                }}
+                torch.save(save_dict, os.path.join(args.save_path, "best.pth"))
+
+            if best_eval_ema is None or evaluation_ema["gF1"] > best_eval_ema["gF1"]:
+                best_epoch_ema = epoch
+                best_eval_ema = {k: v for k, v in evaluation_ema.items()}
+                save_dict_ema = {**best_eval_ema, "checkpoint": {
+                    "model_ema": model_ema.state_dict(),
+                    "epoch": epoch
+                }}
+                torch.save(save_dict_ema, os.path.join(args.save_path, "best_ema.pth"))
+
+            torch.save({
                 'model': model.state_dict(),
                 'model_ema': model_ema.state_dict(),
                 'optimizer': optimizer.state_dict(),
-                'epoch': epoch
-            }
-
-            miou, mf1 = evaluation["gIoU"], evaluation["gF1"]
-
-            if len(best_evaluations) < 10:
-                best_evaluations[epoch] = evaluation
-            else:
-                lowest_epoch, lowest_evaluation = sorted(
-                    best_evaluations.items(),
-                    key=lambda kv: kv[1]["gIoU"]
-                )[0]
-                if miou > lowest_evaluation['gIoU']:
-                    del best_evaluations[lowest_epoch]
-                    best_evaluations[epoch] = evaluation
-
-            best_epoch, best_evaluation = sorted(
-                best_evaluations.items(),
-                key=lambda kv: kv[1]["gF1"],
-                reverse=True
-            )[0]
-
-            best_iou = best_evaluation["gIoU"]
-            best_f1 = best_evaluation["gF1"]
-            best_accu = best_evaluation["gAccu"]
-            best_miou = best_evaluation["mIoU"]
-            best_mf1 = best_evaluation["mF1"]
-            best_far = best_evaluation["FAR"]
+                'epoch': epoch,
+                'best_epoch': best_epoch,
+                'best_epoch_ema': best_epoch_ema,
+                'best_eval': best_eval,
+                'best_eval_ema': best_eval_ema,
+            }, os.path.join(args.save_path, 'latest.pth'))
 
         dist.barrier()
-
-    if rank == 0:
-        for ep, eval_ in best_evaluations.items():
-            torch.save(eval_, os.path.join(args.save_path, f"checkpoint_{ep}.pth"))
-
-        best_epoch, best_evaluation = sorted(
-            best_evaluations.items(),
-            key=lambda kv: kv[1]["gF1"],
-            reverse=True
-        )[0]
-
-        torch.save(best_evaluation, os.path.join(args.save_path, f"best.pth"))
 
 
 if __name__ == '__main__':
