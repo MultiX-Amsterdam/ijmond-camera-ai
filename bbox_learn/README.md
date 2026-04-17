@@ -157,12 +157,60 @@ You can check if the cropped IJmond segmentation dataset can be loaded. This wil
 python smoke_dataset.py dataset/ijmond_seg/test/cropped/splits/split_by_timestamp/train/20_with_masks.txt dataset/ijmond_seg/test/cropped/ ijmond_seg_cropped_train_with_mask_20
 ```
 
-And lastly, run the following to mix expert and citizen data for experiments:
+And lastly, run the following to create dataset txt files that are needed for the experiment:
 ```sh
-python create_data_mix.py
+python create_experiment_datasets.py
 ```
 
 ## Experiment Settings
+
+### Datasets
+
+For simplicity, we use the following dataset abbreviations with their paths.
+
+For the SMOKE5K data, we have
+- `smoke5k_train`
+  - Path: `smoke5k/train/train.txt`
+- `smoke5k_test`
+  - Path: `smoke5k/test/test.txt`
+
+For the citizen-contributed data, we have:
+- `citizen_with_mask`:
+  - Path: `ijmond_pseudo_masks/train_with_mask.txt`
+- `citizen_without_mask`:
+  - Path: `ijmond_pseudo_masks/train_without_mask.txt`
+
+For unlabeled data, we have:
+- `unlabeled`:
+  - Path: `ijmond_vid/unlabeled.txt`
+
+For expert-labeled data, we have the followings for validation and testing:
+- `expert_timestamp_val`: combines the followiing
+  - Path: `ijmond_seg/test/cropped/splits/split_by_timestamp/val_with_masks.txt`
+  - Path: `ijmond_seg/test/cropped/splits/split_by_timestamp/val_without_masks.txt`
+- `expert_timestamp_test_with_masks`: combines the followiing
+  - Path: `ijmond_seg/test/cropped/splits/split_by_timestamp/test_with_masks.txt`
+  - Path: `ijmond_seg/test/cropped/splits/split_by_timestamp/test_without_masks.txt`
+
+For expert-labeled data, we have the following timestamp and camera splits for training, where placeholder `{P}` can be `100`, `80`, `60`, `40`, or `20`, representing the amount of available training data.
+- `expert_timestamp_train_{P}_with_masks`:
+  - `ijmond_seg/test/cropped/splits/split_by_timestamp/train/{P}_with_masks.txt`
+- `expert_timestamp_train_{P}_without_masks`:
+  - `ijmond_seg/test/cropped/splits/split_by_timestamp/train/{P}_without_masks.txt`
+
+For example, dataset `expert_timestamp_train_100_with_masks` has path `ijmond_seg/test/cropped/splits/split_by_timestamp/train/100_with_masks.txt`.
+
+We also need to mix the expert and citizen data. We list the mix below and give them new names:
+- `mix_timestamp_train_{P}_with_masks`: combines the followiing
+  - `expert_timestamp_train_{P}_with_masks`
+  - `citizen_with_mask`
+- `mix_timestamp_train_{P}_without_masks`: combines the followiing
+  - `expert_timestamp_train_{P}_without_masks`
+  - `citizen_without_mask`
+
+For example, dataset `mix_timestamp_train_100_with_masks` combines `expert_timestamp_train_100_with_masks` and `citizen_with_mask`.
+
+### Pretraining
 
 For experiments, all models should first load the large-scale pretrained weights (e.g., DINOv2), which depends on the model implementation. In this experiment, we use UniMatch-V2. Then, all models should first be pretrained again using the `smoke5k` dataset to simulate the situation that we have some prior model in a similar problem domain (smoke segmentaion) to begin with. We call this the `Smoke5K-pretrained-UniMatch-V2` model.
 
@@ -175,36 +223,6 @@ During the finetuning stage, we always use the full set of images with masks (i.
 ### The unlabeled data sampling rule
 
 When using unlabeled data, we randomly sample a set of unlabeled images during training for each iteraton (i.e., each batch gradient descent step) to reduce the computation time. The number of unlabeled images is the same as labeled images, which is the same implementation as in the [UniMatchV2 paper](https://arxiv.org/abs/2410.10777).
-
-### Datasets
-
-For simplicity, we use the following dataset abbreviations with their paths. For the citizen-contributed data, we have:
-- `citizen_with_mask`:
-  - `ijmond_pseudo_masks/train_with_mask.txt`
-- `citizen_without_mask`:
-  - `ijmond_pseudo_masks/train_without_mask.txt`
-
-For unlabeled data, we have:
-- `unlabeled`:
-  - `ijmond_vid/unlabeled.txt`
-
-For expert-labeled data, we have the followings for validation and testing:
-- `expert_timestamp_val_with_masks`:
-  - `ijmond_seg/test/cropped/splits/split_by_timestamp/val_with_masks.txt`
-- `expert_timestamp_val_without_masks`
-  - `ijmond_seg/test/cropped/splits/split_by_timestamp/val_without_masks.txt`
-- `expert_timestamp_test_with_masks`:
-  - `ijmond_seg/test/cropped/splits/split_by_timestamp/test_with_masks.txt`
-- `expert_timestamp_test_without_masks`
-  - `ijmond_seg/test/cropped/splits/split_by_timestamp/test_without_masks.txt`
-
-For expert-labeled data, we have the following timestamp and camera splits for training, where placeholder `{P}` can be `100`, `80`, `60`, `40`, or `20`, representing the amount of available training data.
-- `expert_timestamp_train_{P}_with_masks`:
-  - `ijmond_seg/test/cropped/splits/split_by_timestamp/train/{P}_with_masks.txt`
-- `expert_timestamp_train_{P}_without_masks`:
-  - `ijmond_seg/test/cropped/splits/split_by_timestamp/train/{P}_without_masks.txt`
-
-For example, dataset `expert_timestamp_train_100_with_masks` has path `ijmond_seg/test/cropped/splits/split_by_timestamp/train/100_with_masks.txt`.
 
 ### RQ1: How useful is citizen-contributed weak labels?
 
@@ -231,13 +249,7 @@ In this setting, `M-zeroshot` will be the lower bound of performance, and `M-mix
 
 IMPORTANT: All models start with the `Smoke5K-pretrained-UniMatch-V2` model, which loads large-scale `UniMatch-V2` pretrained weights and then pretrained again on the `smoke5k` dataset.
 
-For this research question, we also only use the timestamp split. We need to first mix the expert and citizen data. We list the mix below and give them new names:
-- `mix_timestamp_train_{P}_with_masks`: combines the followiing
-  - `expert_timestamp_train_{P}_with_masks`
-  - `citizen_with_mask`
-- `mix_timestamp_train_{P}_without_masks`: combines the followiing
-  - `expert_timestamp_train_{P}_without_masks`
-  - `citizen_without_mask`
+For this research question, we also only use the timestamp split.
 
 We use the following models for this experiment:
 - `M-mix-{P}`:
@@ -256,11 +268,9 @@ Notice that in this experiment setting for RQ1 and RQ2, we have an assumption th
 
 ### Validation and testing
 
-All models (except `M-zeroshot`) will use the following validation set for model selection:
+All models will use the following validation set for model selection:
 - `expert_timestamp_val_with_masks`
 - `expert_timestamp_val_without_masks`
-
-The `M-zeroshot` model should use the test set in the SMOKE5K dataset for validation.
 
 All models will use the following test set for performance evaluation:
 - `expert_timestamp_test_with_masks`

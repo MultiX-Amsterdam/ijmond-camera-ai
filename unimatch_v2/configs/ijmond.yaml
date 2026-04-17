@@ -1,6 +1,6 @@
 # arguments for dataset
 dataset: ijmond
-data_root: /home/yhsu/myspace/ijmond-camera-ai/bbox_learn/dataset
+data_root: /home/ych/ijmond-camera-ai/bbox_learn/dataset
 nclass: 2
 crop_size: 364
 base_size: 728  # long side rescaled to this before scale jitter (2x crop_size)
@@ -18,5 +18,5 @@ conf_thresh: 0.95
 
 # arguments for model
 model: dpt
-backbone: dinov2_base
+backbone: dinov2_small
 lock_backbone: True

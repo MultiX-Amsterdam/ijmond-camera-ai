@@ -36,15 +36,15 @@ class SemiSmokeDataset(Dataset):
 
         img = Image.open(img_filename).convert('RGB')
 
-        if self.mode == 'train_u':
+        # Each line in the txt file can have one of three formats:
+        #   "img_path"            – image with no smoke (no mask, zero mask used)
+        #   "img_path None"       – unlabeled image (no ground truth, zero mask used)
+        #   "img_path mask_path"  – image with a smoke mask
+        if self.mode == 'train_u' or len(split_item) < 2 or split_item[1] == 'None':
             mask_npy = np.zeros((img.size[1], img.size[0]), dtype=np.uint8)
         else:
             mask_filename = os.path.join(self.root, split_item[1])
-
-            if mask_filename is None or mask_filename.endswith("None"):
-                mask_npy = np.zeros((img.size[1], img.size[0]), dtype=np.uint8)
-            else:
-                mask_npy = np.array(Image.open(mask_filename))
+            mask_npy = np.array(Image.open(mask_filename))
 
             if mask_npy.ndim > 2:
                 mask_npy = np.max(mask_npy, axis=-1)

@@ -5,8 +5,8 @@
 # exp: just for specifying the 'save_path'
 # model: ['m-zeroshot', 'm-citizen', ...]. Please check directory './splits' for available model splits
 
-model='m-mix-20'
-method='test_model'
+model='m-zeroshot'
+method='supervised'
 exp='dinov2_small'
 unlabeled_sample_size=1500
 unlabeled_sample_seed=23838742

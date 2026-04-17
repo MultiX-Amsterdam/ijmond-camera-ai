@@ -10,3 +10,4 @@ dataset/ijmond_vid/**/*.txt
 debug*
 *.pth
 debug_plot/*
+dataset/experiment/*
