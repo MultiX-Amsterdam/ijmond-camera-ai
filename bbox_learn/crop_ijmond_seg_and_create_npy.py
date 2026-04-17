@@ -1,12 +1,11 @@
 """
-Crop segmentation masks for the IJmond Segmentation dataset and create npy files.
+Crop segmentation masks for the IJmond Segmentation dataset.
 """
 import cv2
 import numpy as np
 import os
 import sys
 import json
-from util.util import convert_images_to_npy
 
 
 def crop_image(image_path, x, y, width, height):
@@ -132,15 +131,6 @@ if __name__ == "__main__":
     if not os.path.exists(output_masks_folder):
         os.makedirs(output_masks_folder)
 
-    # Create npy subfolders for converted images and masks
-    output_images_npy_folder = os.path.join(output_folder, "images_npy")
-    if not os.path.exists(output_images_npy_folder):
-        os.makedirs(output_images_npy_folder)
-
-    output_masks_npy_folder = os.path.join(output_folder, "masks_npy")
-    if not os.path.exists(output_masks_npy_folder):
-        os.makedirs(output_masks_npy_folder)
-
     # Load COCO annotations to get list of images
     print(f"Loading COCO annotations from: {coco_json_path}")
     with open(coco_json_path, 'r') as f:
@@ -217,13 +207,9 @@ if __name__ == "__main__":
                     # Create output filenames
                     cropped_filename = f"{name_without_ext}_crop_{view_id}{file_ext}"
                     cropped_mask_filename = f"{name_without_ext}_crop_{view_id}.png"
-                    cropped_npy_filename = f"{name_without_ext}_crop_{view_id}.npy"
-                    cropped_mask_npy_filename = f"{name_without_ext}_crop_{view_id}.npy"
 
                     output_image_path = os.path.join(output_images_folder, cropped_filename)
                     output_mask_path = os.path.join(output_masks_folder, cropped_mask_filename)
-                    output_image_npy_path = os.path.join(output_images_npy_folder, cropped_npy_filename)
-                    output_mask_npy_path = os.path.join(output_masks_npy_folder, cropped_mask_npy_filename)
 
                     print(f"    Crop {view_id}: x={x}, y={y}, width={width}, height={height}")
 
@@ -234,14 +220,7 @@ if __name__ == "__main__":
                     mask_success = save_cropped_image(mask_input_path, output_mask_path, x, y, width, height)
 
                     if image_success and mask_success:
-                        # Convert cropped images to npy files
-                        try:
-                            convert_images_to_npy(output_image_path, output_image_npy_path, gray_scale=False)
-                            convert_images_to_npy(output_mask_path, output_mask_npy_path, gray_scale=True)
-                            successful_crops += 1
-                        except Exception as e:
-                            print(f"    Error converting to npy: {e}")
-                            continue
+                        successful_crops += 1
 
                         # Add metadata entry
                         metadata_entry = {
@@ -249,8 +228,6 @@ if __name__ == "__main__":
                             "cropped_file_name": cropped_filename,
                             "original_mask_name": mask_filename,
                             "cropped_mask_name": cropped_mask_filename,
-                            "cropped_npy_name": cropped_npy_filename,
-                            "cropped_mask_npy_name": cropped_mask_npy_filename,
                             "x": x,
                             "y": y,
                             "width": width,
@@ -261,10 +238,10 @@ if __name__ == "__main__":
                         metadata.append(metadata_entry)
 
                         # Check mask content to determine if it has smoke or not
-                        mask_npy = np.load(output_mask_npy_path)
-                        has_smoke = np.any(mask_npy > 0)  # Check if mask has any non-zero values
+                        mask_img = cv2.imread(output_mask_path, cv2.IMREAD_GRAYSCALE)
+                        has_smoke = np.any(mask_img > 0)
 
-                        pair_string = f"images_npy/{cropped_npy_filename} masks_npy/{cropped_mask_npy_filename}"
+                        pair_string = f"images/{cropped_filename} masks/{cropped_mask_filename}"
 
                         if has_smoke:
                             test_pairs_with_mask.append(pair_string)

@@ -2,15 +2,13 @@
 This script does the following:
 - Filter the dataset by specific labels.
 - Compute the final bounding box.
-- Save the image as .npy format.
 """
 import sys
 import os
 from util.util import (
     load_json,
     save_json,
-    draw_bbox_on_image,
-    convert_images_to_npy
+    draw_bbox_on_image
 )
 from collections import defaultdict
 import copy
@@ -394,7 +392,6 @@ if __name__ == "__main__":
     print(filtered_metadata_by_state.keys())
 
     # For each box, get the image and overlay the bounding box
-    # Also convert the image to .npy format and save it
     print("Drawing bounding boxes on images and saving overlays...")
     print("=" * 50)
     for state, records in filtered_metadata_by_state.items():
@@ -410,7 +407,6 @@ if __name__ == "__main__":
             if record["bbox"] is not None:
                 bbox_list.extend(record["bbox"])
             draw_bbox_on_image(img_path, save_path, bbox_list)
-            convert_images_to_npy(img_path, os.path.join(root_dir, f"img_npy/{img_id}.npy"))
             print(f"Overlay saved to {save_path}")
 
     # Print the total number of records

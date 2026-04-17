@@ -34,10 +34,7 @@ class SemiSmokeDataset(Dataset):
         split_item = item_id.split(' ')
         img_filename = os.path.join(self.root, split_item[0])
 
-        if img_filename.endswith('.npy'):
-            img = Image.fromarray(np.load(img_filename)).convert('RGB')
-        else:
-            img = Image.open(img_filename).convert('RGB')
+        img = Image.open(img_filename).convert('RGB')
 
         if self.mode == 'train_u':
             mask_npy = np.zeros((img.size[1], img.size[0]), dtype=np.uint8)
@@ -46,8 +43,6 @@ class SemiSmokeDataset(Dataset):
 
             if mask_filename is None or mask_filename.endswith("None"):
                 mask_npy = np.zeros((img.size[1], img.size[0]), dtype=np.uint8)
-            elif mask_filename.endswith('.npy'):
-                mask_npy = np.load(mask_filename)
             else:
                 mask_npy = np.array(Image.open(mask_filename))
 

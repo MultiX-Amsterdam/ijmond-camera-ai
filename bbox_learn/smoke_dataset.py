@@ -4,6 +4,7 @@ import torch
 from torch.utils.data import Dataset
 from torchvision import tv_tensors
 import numpy as np
+from PIL import Image
 from util.util import (
     load_pair_txt,
     is_file_here
@@ -17,7 +18,7 @@ class SmokeDataset(Dataset):
     def __init__(self, metadata_path, root_dir, transform=None):
         """
         metadata_path (string): the full path to the metadata json file
-        root_dir (string): the root directory that stores images and ground truth segmentation masks in .npy format
+        root_dir (string): the root directory that stores images and ground truth segmentation masks
         transform (callable, optional): optional transform v2 (torchvision.transforms.v2) to be applied on an image and bounding boxes.
         """
         self.metadata = load_pair_txt(metadata_path)
@@ -35,10 +36,10 @@ class SmokeDataset(Dataset):
         if not is_file_here(img_file_path):
             raise ValueError("Cannot find file: %s" % (img_file_path))
 
-        # Load image from .npy file
-        img = torch.from_numpy(np.load(img_file_path).astype(np.uint8))
+        # Load image
+        img = torch.from_numpy(np.array(Image.open(img_file_path).convert('RGB')))
 
-        # Change dimensions fro (H, W, C) to (C, H, W)
+        # Change dimensions from (H, W, C) to (C, H, W)
         img = img.permute(2, 0, 1)
 
         if len(v) == 1 or v[1] == "None":
@@ -51,8 +52,8 @@ class SmokeDataset(Dataset):
             gt_file_path = os.path.join(self.root_dir, f"{v[1]}")
             if not is_file_here(gt_file_path):
                 raise ValueError("Cannot find file: %s" % (gt_file_path))
-            # Load ground truth segmentation mask from .npy file
-            gt = torch.from_numpy(np.load(gt_file_path).astype(np.uint8))
+            # Load ground truth segmentation mask
+            gt = torch.from_numpy(np.array(Image.open(gt_file_path).convert('L')))
             # Convert to tv_tensors.Mask for proper transform handling
             gt = tv_tensors.Mask(gt)
             # Transform image

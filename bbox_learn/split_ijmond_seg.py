@@ -7,14 +7,14 @@ First, we need to read the metadata file that contains the cropped images and ma
 The cropped images with masks are in the dataset/ijmond_seg/test/cropped/test_with_mask.txt file
 The cropped images without masks are in the dataset/ijmond_seg/test/cropped/test_without_mask.txt file
 Each line in the file looks like below:
-images_npy/kooks_1__2024-10-31T06-51-46Z_frame_2396_jpg.rf.dd0990aa1ac67e5bfaa9ba7fe7b6f8b1_crop_2.npy masks_npy/kooks_1__2024-10-31T06-51-46Z_frame_2396_jpg.rf.dd0990aa1ac67e5bfaa9ba7fe7b6f8b1_crop_2.npy
+images/kooks_1__2024-10-31T06-51-46Z_frame_2396_jpg.rf.dd0990aa1ac67e5bfaa9ba7fe7b6f8b1_crop_2.jpg masks/kooks_1__2024-10-31T06-51-46Z_frame_2396_jpg.rf.dd0990aa1ac67e5bfaa9ba7fe7b6f8b1_crop_2.png
 If we seperate by space, the first part is the image path and the second part is the mask path.
 In this way, we can get a list of file names of image-mask pairs for the dataset.
 
 Next, we need to get all the timestamps and camera views from the file names.
 The timestamp is the part after the second double underscore and before the "_frame" part.
 The camera view is the part before the first double underscore.
-For example, in the file name "kooks_1__2024-10-31T06-51-46Z_frame_2396_jpg.rf.dd0990aa1ac67e5bfaa9ba7fe7b6f8b1_crop_2.npy",
+For example, in the file name "kooks_1__2024-10-31T06-51-46Z_frame_2396_jpg.rf.dd0990aa1ac67e5bfaa9ba7fe7b6f8b1_crop_2.jpg",
 the timestamp is "2024-10-31T06-51-46Z" and the camera view is "kooks_1".
 We have three different camera views: "kooks_1", "kooks_2", and "hoogovens_6_7".
 So, for each file name, we can extract the timestamp and camera view.
