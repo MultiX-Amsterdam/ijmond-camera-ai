@@ -20,3 +20,4 @@ conf_thresh: 0.95
 model: dpt
 backbone: dinov2_base
 lock_backbone: True
+use_dcp: True

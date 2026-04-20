@@ -65,7 +65,8 @@ def main():
 
     model = DPT(**{
         **model_configs[cfg['backbone'].split('_')[-1]],
-        'nclass': cfg['nclass']
+        'nclass': cfg['nclass'],
+        'use_dcp': cfg.get('use_dcp', False),
     })
 
     state_dict = torch.load(f'./pretrained/{cfg["backbone"]}.pth')
@@ -147,7 +148,8 @@ def main():
         'train_u',
         cfg['crop_size'],
         base_size=cfg.get('base_size'),
-        id_path=training_cfg['unlabeled_dataset']
+        id_path=training_cfg['unlabeled_dataset'],
+        use_dcp=cfg.get('use_dcp', False),
     )
 
     current_nsample = len(trainset_u)
@@ -193,7 +195,8 @@ def main():
         cfg['crop_size'],
         base_size=cfg.get('base_size'),
         id_path=training_cfg['smoke_dataset'],
-        nsample=current_nsample
+        nsample=current_nsample,
+        use_dcp=cfg.get('use_dcp', False),
     )
 
     trainsampler_smoke = torch.utils.data.distributed.DistributedSampler(trainset_smoke)
@@ -214,7 +217,8 @@ def main():
         cfg['crop_size'],
         base_size=cfg.get('base_size'),
         id_path=training_cfg['clear_dataset'],
-        nsample=current_nsample
+        nsample=current_nsample,
+        use_dcp=cfg.get('use_dcp', False),
     )
 
     trainsampler_clear = torch.utils.data.RandomSampler(
@@ -236,14 +240,15 @@ def main():
         cfg['dataset'],
         cfg['data_root'],
         'val',
-        id_path=training_cfg['validation_dataset']
+        id_path=training_cfg['validation_dataset'],
+        use_dcp=cfg.get('use_dcp', False),
     )
 
     valloader = DataLoader(
         valset,
         batch_size=1,
         pin_memory=True,
-        num_workers=1,
+        num_workers=4,
         drop_last=False,
         shuffle=False
     )

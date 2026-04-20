@@ -1,5 +1,10 @@
 #!/bin/bash
 
+# Ensure this script always runs under bash, not sh/dash (which lacks array support)
+if [ -z "$BASH_VERSION" ]; then
+    exec bash "$0" "$@"
+fi
+
 # Training script: runs all experiments in sequence.
 # Each entry is: "<model> <method>"
 # Usage: bash scripts/train.sh [NUM_GPUS [PORT [MASTER_ADDR]]]
@@ -18,7 +23,7 @@ NUM_GPUS=${1:-1}
 PORT=${2:-9271}
 MASTER_ADDR=${3:-"localhost"}
 
-exp='dinov2_base'
+exp='dinov2_base_dcp'
 unlabeled_sample_size=1500
 unlabeled_sample_seed=23838742
 
@@ -31,26 +36,10 @@ MODELS=(
     "m-expert"
     "m-mix-20"
     "m-mix-20"
-    "m-mix-40"
-    "m-mix-40"
-    "m-mix-60"
-    "m-mix-60"
-    "m-mix-80"
-    "m-mix-80"
-    "m-mix-100"
-    "m-mix-100"
 )
 
 METHODS=(
     "supervised"
-    "test_model"
-    "unimatch_v2"
-    "test_model"
-    "unimatch_v2"
-    "test_model"
-    "unimatch_v2"
-    "test_model"
-    "unimatch_v2"
     "test_model"
     "unimatch_v2"
     "test_model"
@@ -65,7 +54,7 @@ cd "$(dirname "$0")/.." || exit 1
 
 RUN_TS=$(date +%Y%m%d_%H%M%S)
 
-for i in "${!MODELS[@]}"; do
+for i in $(seq 0 $((${#MODELS[@]} - 1))); do
     model="${MODELS[$i]}"
     method="${METHODS[$i]}"
 

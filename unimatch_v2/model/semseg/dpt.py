@@ -21,15 +21,15 @@ def _make_fusion_block(features, use_bn, size=None):
 
 class DPTHead(nn.Module):
     def __init__(
-        self, 
+        self,
         nclass,
-        in_channels, 
-        features=256, 
-        use_bn=False, 
+        in_channels,
+        features=256,
+        use_bn=False,
         out_channels=[256, 512, 1024, 1024],
     ):
         super(DPTHead, self).__init__()
-        
+
         self.projects = nn.ModuleList([
             nn.Conv2d(
                 in_channels=in_channels,
@@ -39,7 +39,7 @@ class DPTHead(nn.Module):
                 padding=0,
             ) for out_channel in out_channels
         ])
-        
+
         self.resize_layers = nn.ModuleList([
             nn.ConvTranspose2d(
                 in_channels=out_channels[0],
@@ -61,16 +61,16 @@ class DPTHead(nn.Module):
                 stride=2,
                 padding=1)
         ])
-        
+
         self.scratch = _make_scratch(
             out_channels,
             features,
             groups=1,
             expand=False,
         )
-        
+
         self.scratch.stem_transpose = None
-        
+
         self.scratch.refinenet1 = _make_fusion_block(features, use_bn)
         self.scratch.refinenet2 = _make_fusion_block(features, use_bn)
         self.scratch.refinenet3 = _make_fusion_block(features, use_bn)
@@ -81,73 +81,111 @@ class DPTHead(nn.Module):
             nn.ReLU(True),
             nn.Conv2d(features, nclass, kernel_size=1, stride=1, padding=0)
         )
-    
+
     def forward(self, out_features, patch_h, patch_w):
         out = []
         for i, x in enumerate(out_features):
             x = x.permute(0, 2, 1).reshape((x.shape[0], x.shape[-1], patch_h, patch_w))
-            
+
             x = self.projects[i](x)
             x = self.resize_layers[i](x)
-            
+
             out.append(x)
-        
+
         layer_1, layer_2, layer_3, layer_4 = out
-        
+
         layer_1_rn = self.scratch.layer1_rn(layer_1)
         layer_2_rn = self.scratch.layer2_rn(layer_2)
         layer_3_rn = self.scratch.layer3_rn(layer_3)
         layer_4_rn = self.scratch.layer4_rn(layer_4)
-        
-        path_4 = self.scratch.refinenet4(layer_4_rn, size=layer_3_rn.shape[2:])        
+
+        path_4 = self.scratch.refinenet4(layer_4_rn, size=layer_3_rn.shape[2:])
         path_3 = self.scratch.refinenet3(path_4, layer_3_rn, size=layer_2_rn.shape[2:])
         path_2 = self.scratch.refinenet2(path_3, layer_2_rn, size=layer_1_rn.shape[2:])
         path_1 = self.scratch.refinenet1(path_2, layer_1_rn)
-        
+
         out = self.scratch.output_conv(path_1)
-        
+
         return out
 
 
 class DPT(nn.Module):
     def __init__(
-        self, 
-        encoder_size='base', 
+        self,
+        encoder_size='base',
         nclass=21,
-        features=128, 
-        out_channels=[96, 192, 384, 768], 
+        features=128,
+        out_channels=[96, 192, 384, 768],
         use_bn=False,
+        use_dcp=False,
+        dcp_channels=128,
     ):
         super(DPT, self).__init__()
-        
+
         self.intermediate_layer_idx = {
             'small': [2, 5, 8, 11],
-            'base': [2, 5, 8, 11], 
-            'large': [4, 11, 17, 23], 
+            'base': [2, 5, 8, 11],
+            'large': [4, 11, 17, 23],
             'giant': [9, 19, 29, 39]
         }
-        
+
         self.encoder_size = encoder_size
         self.backbone = DINOv2(model_name=encoder_size)
-        
+
         self.head = DPTHead(nclass, self.backbone.embed_dim, features, use_bn, out_channels=out_channels)
-        
+
+        self.use_dcp = use_dcp
+        if use_dcp:
+            # Lightweight CNN branch for the 1-channel transmission map.
+            # Three stride-2 convs bring H×W → H/8×W/8; output is then
+            # interpolated to the backbone patch grid (H/14×W/14).
+            self.dcp_encoder = nn.Sequential(
+                nn.Conv2d(1, 32, kernel_size=7, stride=2, padding=3),
+                nn.GELU(),
+                nn.Conv2d(32, 64, kernel_size=3, stride=2, padding=1),
+                nn.GELU(),
+                nn.Conv2d(64, dcp_channels, kernel_size=3, stride=2, padding=1),
+                nn.GELU(),
+            )
+            # 1×1 conv fuses [embed_dim + dcp_channels] → embed_dim before the decoder.
+            self.dcp_fusion = nn.Conv2d(
+                self.backbone.embed_dim + dcp_channels,
+                self.backbone.embed_dim,
+                kernel_size=1,
+            )
+
         self.binomial = torch.distributions.binomial.Binomial(probs=0.5)
-        
+
     def lock_backbone(self):
         for p in self.backbone.parameters():
             p.requires_grad = False
-    
+
     def forward(self, x, comp_drop=False):
-        patch_h, patch_w = x.shape[-2] // 14, x.shape[-1] // 14
-        
+        if self.use_dcp:
+            rgb, dcp = x[:, :3], x[:, 3:]
+        else:
+            rgb = x
+
+        patch_h, patch_w = rgb.shape[-2] // 14, rgb.shape[-1] // 14
+
         features = self.backbone.get_intermediate_layers(
-            x, self.intermediate_layer_idx[self.encoder_size]
+            rgb, self.intermediate_layer_idx[self.encoder_size]
         )
-        
+
+        if self.use_dcp:
+            B, embed_dim = features[-1].shape[0], features[-1].shape[-1]
+            # DCP branch: encode → interpolate to backbone patch grid
+            dcp_feat = self.dcp_encoder(dcp)
+            dcp_feat = F.interpolate(dcp_feat, (patch_h, patch_w), mode='bilinear', align_corners=False)
+            # Fuse with the deepest backbone feature (most semantic)
+            feat_last = features[-1].permute(0, 2, 1).reshape(B, embed_dim, patch_h, patch_w)
+            fused = self.dcp_fusion(torch.cat([feat_last, dcp_feat], dim=1))
+            fused_tokens = fused.flatten(2).permute(0, 2, 1)
+            features = features[:-1] + (fused_tokens,)
+
         if comp_drop:
             bs, dim = features[0].shape[0], features[0].shape[-1]
-            
+
             dropout_mask1 = self.binomial.sample((bs // 2, dim)).cuda() * 2.0
             dropout_mask2 = 2.0 - dropout_mask1
             dropout_prob = 0.5
@@ -155,18 +193,18 @@ class DPT(nn.Module):
             kept_indexes = torch.randperm(bs // 2)[:num_kept]
             dropout_mask1[kept_indexes, :] = 1.0
             dropout_mask2[kept_indexes, :] = 1.0
-            
+
             dropout_mask = torch.cat((dropout_mask1, dropout_mask2))
-            
+
             features = (feature * dropout_mask.unsqueeze(1) for feature in features)
-            
+
             out = self.head(features, patch_h, patch_w)
-            
+
             out = F.interpolate(out, (patch_h * 14, patch_w * 14), mode='bilinear', align_corners=True)
-            
+
             return out
-        
+
         out = self.head(features, patch_h, patch_w)
         out = F.interpolate(out, (patch_h * 14, patch_w * 14), mode='bilinear', align_corners=True)
-        
+
         return out
