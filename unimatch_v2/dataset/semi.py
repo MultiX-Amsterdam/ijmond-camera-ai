@@ -43,7 +43,7 @@ def _dc_transmission_estimate(im, A, sz):
     omega = 0.95
     im3 = np.empty(im.shape, im.dtype)
     for ind in range(3):
-        im3[:, :, ind] = im[:, :, ind] / A[0, ind]
+        im3[:, :, ind] = im[:, :, ind] / np.maximum(A[0, ind], 1e-6)
     return 1 - omega * _dc_dark_channel(im3, sz)
 
 
