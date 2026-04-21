@@ -1,6 +1,64 @@
 import numpy as np
 import logging
 import os
+import torch
+import torch.nn as nn
+import torch.nn.functional as F
+
+
+class BoundaryLenienceCELoss(nn.Module):
+    """Cross-entropy loss with boundary leniency for amorphous objects like smoke.
+
+    For each pixel, an average pooling window over the binary ground-truth mask
+    produces a local smoke density P. Pixels deep inside smoke or background
+    (P≈1 or P≈0) receive full penalty. Edge pixels (P≈0.5) receive a reduced
+    penalty controlled by alpha:
+
+        W = 1 - alpha * 4 * P * (1 - P)
+
+    When alpha=0 this reduces to standard cross-entropy. When alpha=1 a perfect
+    half-and-half boundary pixel gets zero weight.
+
+    Args:
+        ignore_index: label value to ignore (default 255).
+        alpha: leniency strength in [0, 1] (default 0.5).
+        window_size: AvgPool2d kernel size for local density estimation (default 7).
+        reduction: 'mean' returns a scalar; 'none' returns per-pixel weighted
+            losses of shape (B, H, W) for use with external masking (e.g. pseudo-
+            label confidence thresholding).
+    """
+
+    def __init__(self, ignore_index=255, alpha=0.5, window_size=7, reduction='mean'):
+        super().__init__()
+        self.ignore_index = ignore_index
+        self.alpha = alpha
+        self.window_size = window_size
+        self.reduction = reduction
+
+    def forward(self, logits, target):
+        # Per-pixel CE, shape (B, H, W)
+        ce = F.cross_entropy(logits, target, ignore_index=self.ignore_index, reduction='none')
+
+        # Binary smoke map; treat ignore pixels as background (0) so they don't
+        # bias the density estimate near image borders.
+        gt_smoke = (target == 1).float().unsqueeze(1)  # (B, 1, H, W)
+
+        # Local smoke density via average pooling, output shape (B, H, W)
+        padding = self.window_size // 2
+        P = F.avg_pool2d(gt_smoke, kernel_size=self.window_size, stride=1, padding=padding)
+        P = P.squeeze(1)
+
+        # Weight: 1 at pure smoke/background, dips toward (1-alpha) at edges
+        W = 1.0 - self.alpha * 4.0 * P * (1.0 - P)
+
+        weighted = ce * W
+
+        if self.reduction == 'none':
+            return weighted
+
+        # 'mean': average over valid (non-ignore) pixels only
+        valid = target != self.ignore_index
+        return (weighted * valid).sum() / valid.sum().clamp(min=1)
 
 
 def count_params(model):

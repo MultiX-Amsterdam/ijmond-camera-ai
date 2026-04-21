@@ -156,6 +156,27 @@ def main():
             for k, v in evaluation_ema.items():
                 logger.info(f"\t{k}: {v:.4f}")
 
+        bl_cfg = cfg.get('boundary_lenience', {})
+        band_k = bl_cfg.get('band_kernel_size', 7)
+        eval_bf = evaluate_new(model, testloader, multiplier=14, band_kernel_size=band_k)
+
+        print()
+
+        logger.info('***** Evaluation (band-filtered) *****')
+
+        for k, v in eval_bf.items():
+            logger.info(f"\t{k}: {v:.4f}")
+
+        if has_ema:
+            eval_bf_ema = evaluate_new(model_ema, testloader, multiplier=14, band_kernel_size=band_k)
+
+            print()
+
+            logger.info('***** Evaluation EMA (band-filtered) *****')
+
+            for k, v in eval_bf_ema.items():
+                logger.info(f"\t{k}: {v:.4f}")
+
 
 if __name__ == '__main__':
     main()

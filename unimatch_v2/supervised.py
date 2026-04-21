@@ -19,7 +19,7 @@ import yaml
 from dataset.semi import SemiSmokeDataset
 from model.semseg.dpt import DPT
 from util.classes import CLASSES
-from util.utils import count_params, AverageMeter, intersectionAndUnion, init_log
+from util.utils import count_params, AverageMeter, intersectionAndUnion, init_log, BoundaryLenienceCELoss
 from util.dist_helper import setup_distributed
 
 parser = argparse.ArgumentParser(description='UniMatch V2: Pushing the Limit of Semi-Supervised Semantic Segmentation')
@@ -87,7 +87,29 @@ def evaluate(model, loader, cfg, multiplier=None):
     return mIOU, iou_class, overall_acc
 """
 
-def evaluate_new(model, dataloader, multiplier=None):
+def _compute_boundary_band(masks, kernel_size):
+    """Return a bool tensor marking ambiguous boundary pixels.
+
+    Uses morphological dilation and erosion (via max-pooling) on the binary
+    smoke mask. Pixels where the two operations disagree lie on the boundary
+    between guaranteed smoke and guaranteed background.
+
+    Args:
+        masks: integer label tensor of shape (B, H, W).
+        kernel_size: square kernel side length for dilation/erosion.
+
+    Returns:
+        Boolean tensor of shape (B, H, W); True where pixels are in the band.
+    """
+    m = (masks == 1).float().unsqueeze(1)  # (B, 1, H, W)
+    padding = kernel_size // 2
+    dilated = F.max_pool2d(m, kernel_size, stride=1, padding=padding)
+    eroded = -F.max_pool2d(-m, kernel_size, stride=1, padding=padding)
+    band = (dilated - eroded).squeeze(1)  # (B, H, W)
+    return band > 0.5
+
+
+def evaluate_new(model, dataloader, multiplier=None, band_kernel_size=None):
     """
     Calculates smoke-class evaluation metrics.
 
@@ -100,6 +122,10 @@ def evaluate_new(model, dataloader, multiplier=None):
 
     False Alarm Rate (FAR) is computed as the fraction of negative images
     where the model incorrectly predicts any smoke pixels.
+
+    When band_kernel_size is set, ambiguous boundary pixels (computed via
+    morphological dilation/erosion with that kernel) are excluded from all
+    TP/FP/FN accumulation before computing metrics.
     """
     model.eval()
 
@@ -141,19 +167,26 @@ def evaluate_new(model, dataloader, multiplier=None):
             smoke_pred = preds == 1
             smoke_gt = masks == 1
 
-            total_tp += (smoke_pred & smoke_gt).sum().item()
-            total_fp += (smoke_pred & ~smoke_gt).sum().item()
-            total_fn += (~smoke_pred & smoke_gt).sum().item()
-            total_correct += (preds == masks).sum().item()
-            total_pixels += masks.numel()
+            # valid_mask excludes boundary-band pixels when band_kernel_size is set
+            if band_kernel_size is not None:
+                valid_mask = ~_compute_boundary_band(masks, band_kernel_size)
+            else:
+                valid_mask = torch.ones_like(masks, dtype=torch.bool)
+
+            total_tp += (smoke_pred & smoke_gt & valid_mask).sum().item()
+            total_fp += (smoke_pred & ~smoke_gt & valid_mask).sum().item()
+            total_fn += (~smoke_pred & smoke_gt & valid_mask).sum().item()
+            total_correct += ((preds == masks) & valid_mask).sum().item()
+            total_pixels += valid_mask.sum().item()
 
             for b in range(masks.shape[0]):
                 sp = smoke_pred[b]
                 sg = smoke_gt[b]
+                vm = valid_mask[b]
                 if sg.sum().item() > 0:
-                    tp = (sp & sg).sum().item()
-                    fp = (sp & ~sg).sum().item()
-                    fn = (~sp & sg).sum().item()
+                    tp = (sp & sg & vm).sum().item()
+                    fp = (sp & ~sg & vm).sum().item()
+                    fn = (~sp & sg & vm).sum().item()
                     img_iou = (tp + smooth) / (tp + fp + fn + smooth)
                     img_pre = (tp + smooth) / (tp + fp + smooth)
                     img_rec = (tp + smooth) / (tp + fn + smooth)
@@ -270,8 +303,17 @@ def main():
         find_unused_parameters=True
     )
 
+    bl_cfg = cfg.get('boundary_lenience', {})
     if cfg['criterion']['name'] == 'CELoss':
-        criterion = nn.CrossEntropyLoss(**cfg['criterion']['kwargs']).cuda(local_rank)
+        if bl_cfg.get('enabled', False):
+            criterion = BoundaryLenienceCELoss(
+                ignore_index=cfg['criterion']['kwargs'].get('ignore_index', 255),
+                alpha=bl_cfg.get('alpha', 0.5),
+                window_size=bl_cfg.get('window_size', 7),
+                reduction='mean',
+            ).cuda(local_rank)
+        else:
+            criterion = nn.CrossEntropyLoss(**cfg['criterion']['kwargs']).cuda(local_rank)
     else:
         raise NotImplementedError('%s criterion is not implemented' % cfg['criterion']['name'])
 
@@ -469,6 +511,49 @@ def main():
             writer.add_scalar('eval/mIoU_EMA', evaluation_ema["mIoU"], epoch)
             writer.add_scalar('eval/mF1_EMA', evaluation_ema["mF1"], epoch)
             writer.add_scalar('eval/FAR_EMA', evaluation_ema["FAR"], epoch)
+
+            bl_cfg = cfg.get('boundary_lenience', {})
+            band_k = bl_cfg.get('band_kernel_size', 7)
+            eval_bf = evaluate_new(model, valloader, multiplier=14, band_kernel_size=band_k)
+            eval_bf_ema = evaluate_new(model_ema, valloader, multiplier=14, band_kernel_size=band_k)
+
+            logger.info(
+                '***** Eval (band-filtered) ***** >>>> gIoU: {:.4f}, gF1: {:.4f}, gAccu: {:.4f} | '
+                'EMA: gIoU: {:.4f}, gF1: {:.4f}, gAccu: {:.4f}'.format(
+                    eval_bf["gIoU"], eval_bf["gF1"], eval_bf["gAccu"],
+                    eval_bf_ema["gIoU"], eval_bf_ema["gF1"], eval_bf_ema["gAccu"]
+                ))
+
+            logger.info(
+                '***** Eval (band-filtered) ***** >>>> gPre: {:.4f}, gRec: {:.4f} | '
+                'EMA: gPre: {:.4f}, gRec: {:.4f}'.format(
+                    eval_bf["gPre"], eval_bf["gRec"],
+                    eval_bf_ema["gPre"], eval_bf_ema["gRec"]
+                ))
+
+            logger.info(
+                '***** Eval (band-filtered) ***** >>>> mIoU: {:.4f}, mF1: {:.4f}, FAR: {:.4f} | '
+                'EMA: mIoU: {:.4f}, mF1: {:.4f}, FAR: {:.4f}'.format(
+                    eval_bf["mIoU"], eval_bf["mF1"], eval_bf["FAR"],
+                    eval_bf_ema["mIoU"], eval_bf_ema["mF1"], eval_bf_ema["FAR"]
+                ))
+
+            writer.add_scalar('eval_bf/gIoU', eval_bf["gIoU"], epoch)
+            writer.add_scalar('eval_bf/gF1', eval_bf["gF1"], epoch)
+            writer.add_scalar('eval_bf/gPre', eval_bf["gPre"], epoch)
+            writer.add_scalar('eval_bf/gRec', eval_bf["gRec"], epoch)
+            writer.add_scalar('eval_bf/gAccu', eval_bf["gAccu"], epoch)
+            writer.add_scalar('eval_bf/mIoU', eval_bf["mIoU"], epoch)
+            writer.add_scalar('eval_bf/mF1', eval_bf["mF1"], epoch)
+            writer.add_scalar('eval_bf/FAR', eval_bf["FAR"], epoch)
+            writer.add_scalar('eval_bf/gIoU_EMA', eval_bf_ema["gIoU"], epoch)
+            writer.add_scalar('eval_bf/gF1_EMA', eval_bf_ema["gF1"], epoch)
+            writer.add_scalar('eval_bf/gPre_EMA', eval_bf_ema["gPre"], epoch)
+            writer.add_scalar('eval_bf/gRec_EMA', eval_bf_ema["gRec"], epoch)
+            writer.add_scalar('eval_bf/gAccu_EMA', eval_bf_ema["gAccu"], epoch)
+            writer.add_scalar('eval_bf/mIoU_EMA', eval_bf_ema["mIoU"], epoch)
+            writer.add_scalar('eval_bf/mF1_EMA', eval_bf_ema["mF1"], epoch)
+            writer.add_scalar('eval_bf/FAR_EMA', eval_bf_ema["FAR"], epoch)
 
             if best_eval is None or evaluation["gF1"] > best_eval["gF1"]:
                 best_epoch = epoch

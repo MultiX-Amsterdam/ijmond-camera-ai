@@ -17,7 +17,7 @@ import yaml
 from dataset.semi import SemiSmokeDataset
 from model.semseg.dpt import DPT
 from supervised import evaluate_new
-from util.utils import count_params, init_log, AverageMeter
+from util.utils import count_params, init_log, AverageMeter, BoundaryLenienceCELoss
 from util.dist_helper import setup_distributed
 
 parser = argparse.ArgumentParser(description='UniMatch V2: Pushing the Limit of Semi-Supervised Semantic Segmentation')
@@ -134,12 +134,26 @@ def main():
     for param in model_ema.parameters():
         param.requires_grad = False
 
+    bl_cfg = cfg.get('boundary_lenience', {})
     if cfg['criterion']['name'] == 'CELoss':
-        criterion_l = nn.CrossEntropyLoss(**cfg['criterion']['kwargs']).cuda(local_rank)
+        if bl_cfg.get('enabled', False):
+            criterion_l = BoundaryLenienceCELoss(
+                ignore_index=cfg['criterion']['kwargs'].get('ignore_index', 255),
+                alpha=bl_cfg.get('alpha', 0.5),
+                window_size=bl_cfg.get('window_size', 7),
+                reduction='mean',
+            ).cuda(local_rank)
+            criterion_u = BoundaryLenienceCELoss(
+                ignore_index=cfg['criterion']['kwargs'].get('ignore_index', 255),
+                alpha=bl_cfg.get('alpha', 0.5),
+                window_size=bl_cfg.get('window_size', 7),
+                reduction='none',
+            ).cuda(local_rank)
+        else:
+            criterion_l = nn.CrossEntropyLoss(**cfg['criterion']['kwargs']).cuda(local_rank)
+            criterion_u = nn.CrossEntropyLoss(reduction='none').cuda(local_rank)
     else:
         raise NotImplementedError('%s criterion is not implemented' % cfg['criterion']['name'])
-
-    criterion_u = nn.CrossEntropyLoss(reduction='none').cuda(local_rank)
     current_dataset = cfg['dataset']
 
     trainset_u = SemiSmokeDataset(
@@ -472,6 +486,49 @@ def main():
             writer.add_scalar('eval/mIoU_EMA', evaluation_ema["mIoU"], epoch)
             writer.add_scalar('eval/mF1_EMA', evaluation_ema["mF1"], epoch)
             writer.add_scalar('eval/FAR_EMA', evaluation_ema["FAR"], epoch)
+
+            bl_cfg = cfg.get('boundary_lenience', {})
+            band_k = bl_cfg.get('band_kernel_size', 7)
+            eval_bf = evaluate_new(model, valloader, multiplier=14, band_kernel_size=band_k)
+            eval_bf_ema = evaluate_new(model_ema, valloader, multiplier=14, band_kernel_size=band_k)
+
+            logger.info(
+                '***** Eval (band-filtered) ***** >>>> gIoU: {:.4f}, gF1: {:.4f}, gAccu: {:.4f} | '
+                'EMA: gIoU: {:.4f}, gF1: {:.4f}, gAccu: {:.4f}'.format(
+                    eval_bf["gIoU"], eval_bf["gF1"], eval_bf["gAccu"],
+                    eval_bf_ema["gIoU"], eval_bf_ema["gF1"], eval_bf_ema["gAccu"]
+                ))
+
+            logger.info(
+                '***** Eval (band-filtered) ***** >>>> gPre: {:.4f}, gRec: {:.4f} | '
+                'EMA: gPre: {:.4f}, gRec: {:.4f}'.format(
+                    eval_bf["gPre"], eval_bf["gRec"],
+                    eval_bf_ema["gPre"], eval_bf_ema["gRec"]
+                ))
+
+            logger.info(
+                '***** Eval (band-filtered) ***** >>>> mIoU: {:.4f}, mF1: {:.4f}, FAR: {:.4f} | '
+                'EMA: mIoU: {:.4f}, mF1: {:.4f}, FAR: {:.4f}'.format(
+                    eval_bf["mIoU"], eval_bf["mF1"], eval_bf["FAR"],
+                    eval_bf_ema["mIoU"], eval_bf_ema["mF1"], eval_bf_ema["FAR"]
+                ))
+
+            writer.add_scalar('eval_bf/gIoU', eval_bf["gIoU"], epoch)
+            writer.add_scalar('eval_bf/gF1', eval_bf["gF1"], epoch)
+            writer.add_scalar('eval_bf/gPre', eval_bf["gPre"], epoch)
+            writer.add_scalar('eval_bf/gRec', eval_bf["gRec"], epoch)
+            writer.add_scalar('eval_bf/gAccu', eval_bf["gAccu"], epoch)
+            writer.add_scalar('eval_bf/mIoU', eval_bf["mIoU"], epoch)
+            writer.add_scalar('eval_bf/mF1', eval_bf["mF1"], epoch)
+            writer.add_scalar('eval_bf/FAR', eval_bf["FAR"], epoch)
+            writer.add_scalar('eval_bf/gIoU_EMA', eval_bf_ema["gIoU"], epoch)
+            writer.add_scalar('eval_bf/gF1_EMA', eval_bf_ema["gF1"], epoch)
+            writer.add_scalar('eval_bf/gPre_EMA', eval_bf_ema["gPre"], epoch)
+            writer.add_scalar('eval_bf/gRec_EMA', eval_bf_ema["gRec"], epoch)
+            writer.add_scalar('eval_bf/gAccu_EMA', eval_bf_ema["gAccu"], epoch)
+            writer.add_scalar('eval_bf/mIoU_EMA', eval_bf_ema["mIoU"], epoch)
+            writer.add_scalar('eval_bf/mF1_EMA', eval_bf_ema["mF1"], epoch)
+            writer.add_scalar('eval_bf/FAR_EMA', eval_bf_ema["FAR"], epoch)
 
             if best_eval is None or evaluation["gF1"] > best_eval["gF1"]:
                 best_epoch = epoch

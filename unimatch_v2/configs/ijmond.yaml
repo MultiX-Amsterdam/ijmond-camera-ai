@@ -6,7 +6,7 @@ crop_size: 364
 base_size: 728  # long side rescaled to this before scale jitter (2x crop_size)
 
 # arguments for training
-epochs: 3
+epochs: 2
 batch_size: 32 # per GPU (decrease this if using multiple GPUs to avoid OOM)
 lr: 0.00001 # use 0.000005 for single GPU and 0.00001 for 2 GPUs and 0.00002 for 4 GPUs
 lr_multi: 40.0
@@ -15,6 +15,13 @@ criterion:
   kwargs:
     ignore_index: 255
 conf_thresh: 0.95
+
+# Boundary leniency: reduces loss penalty at smoke/background edges
+boundary_lenience:
+  enabled: True
+  alpha: 0.8        # leniency strength in [0, 1]; 0 = standard CE, 1 = full leniency at edges
+  window_size: 11    # AvgPool2d kernel size for local density estimation
+  band_kernel_size: 11  # morphological dilation/erosion kernel for the eval exclusion band
 
 # arguments for model
 model: dpt
