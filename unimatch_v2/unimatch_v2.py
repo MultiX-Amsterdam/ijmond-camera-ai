@@ -269,9 +269,7 @@ def main():
 
     total_iters = len(trainloader_u) * cfg['epochs']
     best_epoch = -1
-    best_epoch_ema = -1
     best_eval = None
-    best_eval_ema = None
     epoch = -1
 
     if os.path.exists(os.path.join(args.save_path, 'latest.pth')):
@@ -281,9 +279,7 @@ def main():
         optimizer.load_state_dict(checkpoint['optimizer'])
         epoch = checkpoint['epoch']
         best_epoch = checkpoint['best_epoch']
-        best_epoch_ema = checkpoint['best_epoch_ema']
         best_eval = checkpoint['best_eval']
-        best_eval_ema = checkpoint['best_eval_ema']
 
         if rank == 0:
             logger.info('************ Resumed from checkpoint at epoch %i\n' % epoch)
@@ -309,26 +305,6 @@ def main():
                         best_eval["mIoU"],
                         best_eval["mF1"],
                         best_eval["FAR"]
-                    )
-                )
-                logger.info(
-                    'Current Epoch: {}, LR: {:.7f} | '
-                    'Best Epoch EMA: {}, '
-                    'gIoU: {:.4f}, '
-                    'gF1: {:.4f}, '
-                    'gAccu: {:.4f}, '
-                    'mIoU: {:.4f}, '
-                    'mF1: {:.4f}, '
-                    'FAR: {:.4f}'.format(
-                        epoch,
-                        optimizer.param_groups[0]['lr'],
-                        best_epoch_ema,
-                        best_eval_ema["gIoU"],
-                        best_eval_ema["gF1"],
-                        best_eval_ema["gAccu"],
-                        best_eval_ema["mIoU"],
-                        best_eval_ema["mF1"],
-                        best_eval_ema["FAR"]
                     )
                 )
             else:
@@ -447,27 +423,20 @@ def main():
 
         if rank == 0:
             evaluation = evaluate_new(model, valloader, multiplier=14)
-            evaluation_ema = evaluate_new(model_ema, valloader, multiplier=14)
 
             logger.info(
-                '***** Evaluation ***** >>>> gIoU: {:.4f}, gF1: {:.4f}, gAccu: {:.4f} | '
-                'EMA: gIoU: {:.4f}, gF1: {:.4f}, gAccu: {:.4f}'.format(
-                    evaluation["gIoU"], evaluation["gF1"], evaluation["gAccu"],
-                    evaluation_ema["gIoU"], evaluation_ema["gF1"], evaluation_ema["gAccu"]
+                '***** Evaluation ***** >>>> gIoU: {:.4f}, gF1: {:.4f}, gAccu: {:.4f}'.format(
+                    evaluation["gIoU"], evaluation["gF1"], evaluation["gAccu"]
                 ))
 
             logger.info(
-                '***** Evaluation ***** >>>> gPre: {:.4f}, gRec: {:.4f} | '
-                'EMA: gPre: {:.4f}, gRec: {:.4f}'.format(
-                    evaluation["gPre"], evaluation["gRec"],
-                    evaluation_ema["gPre"], evaluation_ema["gRec"]
+                '***** Evaluation ***** >>>> gPre: {:.4f}, gRec: {:.4f}'.format(
+                    evaluation["gPre"], evaluation["gRec"]
                 ))
 
             logger.info(
-                '***** Evaluation ***** >>>> mIoU: {:.4f}, mF1: {:.4f}, FAR: {:.4f} | '
-                'EMA: mIoU: {:.4f}, mF1: {:.4f}, FAR: {:.4f}'.format(
-                    evaluation["mIoU"], evaluation["mF1"], evaluation["FAR"],
-                    evaluation_ema["mIoU"], evaluation_ema["mF1"], evaluation_ema["FAR"]
+                '***** Evaluation ***** >>>> mIoU: {:.4f}, mF1: {:.4f}, FAR: {:.4f}'.format(
+                    evaluation["mIoU"], evaluation["mF1"], evaluation["FAR"]
                 ))
 
             writer.add_scalar('eval/gIoU', evaluation["gIoU"], epoch)
@@ -478,57 +447,6 @@ def main():
             writer.add_scalar('eval/mIoU', evaluation["mIoU"], epoch)
             writer.add_scalar('eval/mF1', evaluation["mF1"], epoch)
             writer.add_scalar('eval/FAR', evaluation["FAR"], epoch)
-            writer.add_scalar('eval/gIoU_EMA', evaluation_ema["gIoU"], epoch)
-            writer.add_scalar('eval/gF1_EMA', evaluation_ema["gF1"], epoch)
-            writer.add_scalar('eval/gPre_EMA', evaluation_ema["gPre"], epoch)
-            writer.add_scalar('eval/gRec_EMA', evaluation_ema["gRec"], epoch)
-            writer.add_scalar('eval/gAccu_EMA', evaluation_ema["gAccu"], epoch)
-            writer.add_scalar('eval/mIoU_EMA', evaluation_ema["mIoU"], epoch)
-            writer.add_scalar('eval/mF1_EMA', evaluation_ema["mF1"], epoch)
-            writer.add_scalar('eval/FAR_EMA', evaluation_ema["FAR"], epoch)
-
-            bl_cfg = cfg.get('boundary_lenience', {})
-            band_k = bl_cfg.get('band_kernel_size', 7)
-            eval_bf = evaluate_new(model, valloader, multiplier=14, band_kernel_size=band_k)
-            eval_bf_ema = evaluate_new(model_ema, valloader, multiplier=14, band_kernel_size=band_k)
-
-            logger.info(
-                '***** Eval (band-filtered) ***** >>>> gIoU: {:.4f}, gF1: {:.4f}, gAccu: {:.4f} | '
-                'EMA: gIoU: {:.4f}, gF1: {:.4f}, gAccu: {:.4f}'.format(
-                    eval_bf["gIoU"], eval_bf["gF1"], eval_bf["gAccu"],
-                    eval_bf_ema["gIoU"], eval_bf_ema["gF1"], eval_bf_ema["gAccu"]
-                ))
-
-            logger.info(
-                '***** Eval (band-filtered) ***** >>>> gPre: {:.4f}, gRec: {:.4f} | '
-                'EMA: gPre: {:.4f}, gRec: {:.4f}'.format(
-                    eval_bf["gPre"], eval_bf["gRec"],
-                    eval_bf_ema["gPre"], eval_bf_ema["gRec"]
-                ))
-
-            logger.info(
-                '***** Eval (band-filtered) ***** >>>> mIoU: {:.4f}, mF1: {:.4f}, FAR: {:.4f} | '
-                'EMA: mIoU: {:.4f}, mF1: {:.4f}, FAR: {:.4f}'.format(
-                    eval_bf["mIoU"], eval_bf["mF1"], eval_bf["FAR"],
-                    eval_bf_ema["mIoU"], eval_bf_ema["mF1"], eval_bf_ema["FAR"]
-                ))
-
-            writer.add_scalar('eval_bf/gIoU', eval_bf["gIoU"], epoch)
-            writer.add_scalar('eval_bf/gF1', eval_bf["gF1"], epoch)
-            writer.add_scalar('eval_bf/gPre', eval_bf["gPre"], epoch)
-            writer.add_scalar('eval_bf/gRec', eval_bf["gRec"], epoch)
-            writer.add_scalar('eval_bf/gAccu', eval_bf["gAccu"], epoch)
-            writer.add_scalar('eval_bf/mIoU', eval_bf["mIoU"], epoch)
-            writer.add_scalar('eval_bf/mF1', eval_bf["mF1"], epoch)
-            writer.add_scalar('eval_bf/FAR', eval_bf["FAR"], epoch)
-            writer.add_scalar('eval_bf/gIoU_EMA', eval_bf_ema["gIoU"], epoch)
-            writer.add_scalar('eval_bf/gF1_EMA', eval_bf_ema["gF1"], epoch)
-            writer.add_scalar('eval_bf/gPre_EMA', eval_bf_ema["gPre"], epoch)
-            writer.add_scalar('eval_bf/gRec_EMA', eval_bf_ema["gRec"], epoch)
-            writer.add_scalar('eval_bf/gAccu_EMA', eval_bf_ema["gAccu"], epoch)
-            writer.add_scalar('eval_bf/mIoU_EMA', eval_bf_ema["mIoU"], epoch)
-            writer.add_scalar('eval_bf/mF1_EMA', eval_bf_ema["mF1"], epoch)
-            writer.add_scalar('eval_bf/FAR_EMA', eval_bf_ema["FAR"], epoch)
 
             if best_eval is None or evaluation["gF1"] > best_eval["gF1"]:
                 best_epoch = epoch
@@ -540,24 +458,13 @@ def main():
                 }}
                 torch.save(save_dict, os.path.join(args.save_path, "best.pth"))
 
-            if best_eval_ema is None or evaluation_ema["gF1"] > best_eval_ema["gF1"]:
-                best_epoch_ema = epoch
-                best_eval_ema = {k: v for k, v in evaluation_ema.items()}
-                save_dict_ema = {**best_eval_ema, "checkpoint": {
-                    "model_ema": model_ema.state_dict(),
-                    "epoch": epoch
-                }}
-                torch.save(save_dict_ema, os.path.join(args.save_path, "best_ema.pth"))
-
             torch.save({
                 'model': model.state_dict(),
                 'model_ema': model_ema.state_dict(),
                 'optimizer': optimizer.state_dict(),
                 'epoch': epoch,
                 'best_epoch': best_epoch,
-                'best_epoch_ema': best_epoch_ema,
                 'best_eval': best_eval,
-                'best_eval_ema': best_eval_ema,
             }, os.path.join(args.save_path, 'latest.pth'))
 
         dist.barrier()
