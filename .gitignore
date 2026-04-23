@@ -7,3 +7,4 @@
 *.db
 *.log*
 *screenlog*
+communiy-data/*

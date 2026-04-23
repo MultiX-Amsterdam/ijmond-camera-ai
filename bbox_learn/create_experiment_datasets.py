@@ -34,7 +34,7 @@ DATASET = os.path.join(ROOT, "dataset")
 EXP_DIR = os.path.join(DATASET, "experiment")
 
 SEG_CROPPED = "ijmond_seg/test/cropped/"
-SEG_TS = SEG_CROPPED + "splits/split_by_timestamp/"
+SEG_CAM_BAL = SEG_CROPPED + "splits/split_standard/"
 PERCENTAGES = [100, 80, 60, 40, 20]
 
 
@@ -96,40 +96,31 @@ def main() -> None:
     print("\n=== unlabeled ===")
     write_lines("unlabeled", load("ijmond_vid/unlabeled.txt", "ijmond_vid/"))
 
-    print("\n=== expert_timestamp_val (combines val_with_masks + val_without_masks) ===")
-    val_lines = (
-        load(SEG_TS + "val_with_masks.txt",    SEG_CROPPED)
-        + load(SEG_TS + "val_without_masks.txt", SEG_CROPPED)
+    print("\n=== expert_standard_val ==="
+          " (combines val_with_masks + val_without_masks)")
+    bal_val_lines = (
+        load(SEG_CAM_BAL + "val_with_masks.txt",    SEG_CROPPED)
+        + load(SEG_CAM_BAL + "val_without_masks.txt", SEG_CROPPED)
     )
-    write_lines("expert_timestamp_val", val_lines)
+    write_lines("expert_standard_val", bal_val_lines)
 
-    print("\n=== expert_timestamp_test (combines test_with_masks + test_without_masks) ===")
-    test_lines = (
-        load(SEG_TS + "test_with_masks.txt",    SEG_CROPPED)
-        + load(SEG_TS + "test_without_masks.txt", SEG_CROPPED)
+    print("\n=== expert_standard_test ==="
+          " (combines test_with_masks + test_without_masks)")
+    bal_test_lines = (
+        load(SEG_CAM_BAL + "test_with_masks.txt",    SEG_CROPPED)
+        + load(SEG_CAM_BAL + "test_without_masks.txt", SEG_CROPPED)
     )
-    write_lines("expert_timestamp_test", test_lines)
+    write_lines("expert_standard_test", bal_test_lines)
 
-    print("\n=== expert_timestamp_train_{P}_{with,without}_masks ===")
-    expert_with: dict[str, list[str]] = {}
-    expert_without: dict[str, list[str]] = {}
+    print("\n=== expert_standard_train_{P}_{with,without}_masks ===")
     for p in PERCENTAGES:
-        key = str(p)
-        expert_with[key] = load(f"{SEG_TS}train/{p}_with_masks.txt",    SEG_CROPPED)
-        expert_without[key] = load(f"{SEG_TS}train/{p}_without_masks.txt", SEG_CROPPED)
-        write_lines(f"expert_timestamp_train_{p}_with_masks",    expert_with[key])
-        write_lines(f"expert_timestamp_train_{p}_without_masks", expert_without[key])
-
-    print("\n=== mix_timestamp_train_{P}_{with,without}_masks (expert + citizen) ===")
-    for p in PERCENTAGES:
-        key = str(p)
         write_lines(
-            f"mix_timestamp_train_{p}_with_masks",
-            expert_with[key] + citizen_with,
+            f"expert_standard_train_{p}_with_masks",
+            load(f"{SEG_CAM_BAL}train/{p}_with_masks.txt", SEG_CROPPED),
         )
         write_lines(
-            f"mix_timestamp_train_{p}_without_masks",
-            expert_without[key] + citizen_without,
+            f"expert_standard_train_{p}_without_masks",
+            load(f"{SEG_CAM_BAL}train/{p}_without_masks.txt", SEG_CROPPED),
         )
 
     total = len(os.listdir(EXP_DIR))

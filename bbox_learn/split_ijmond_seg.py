@@ -176,6 +176,14 @@ def print_distribution(entries: List[Dict], label: str) -> None:
         print(f"  {cam}: {cnt}")
 
 
+def print_distribution_with_wo(entries: List[Dict], label: str) -> None:
+    with_masks = [e for e in entries if e.get("mask")]
+    without_masks = [e for e in entries if not e.get("mask")]
+    print_distribution(entries, label)
+    print_distribution(with_masks, f"{label} (with masks)")
+    print_distribution(without_masks, f"{label} (without masks)")
+
+
 def sort_by_timestamp(entries: List[Dict]) -> List[Dict]:
     return sorted(entries, key=lambda e: (e.get("timestamp") is None, e.get("timestamp")))
 
@@ -201,6 +209,36 @@ def split_camera(entries: List[Dict]) -> Dict[str, List[Dict]]:
     return {"train": train, "val": val, "test": test}
 
 
+def split_standard(entries: List[Dict]) -> Dict[str, List[Dict]]:
+    """Per-camera 70/10/20 train/val/test split, merged across all cameras.
+
+    For each camera, entries are sorted by timestamp and then assigned:
+      - first 70 % → training
+      - next  10 % → validation
+      - last  20 % → test
+    The per-camera splits are merged and the training list is re-sorted by
+    timestamp so that the training-variant sub-sampling (last N%) is still
+    chronologically meaningful.
+    """
+    train_all: List[Dict] = []
+    val_all: List[Dict] = []
+    test_all: List[Dict] = []
+    cameras = sorted({e["camera"] for e in entries if e.get("camera")})
+    for cam in cameras:
+        cam_entries = sort_by_timestamp([e for e in entries if e.get("camera") == cam])
+        n = len(cam_entries)
+        n_train = int(n * 0.7)
+        n_val = int(n * 0.1)
+        train_all.extend(cam_entries[:n_train])
+        val_all.extend(cam_entries[n_train:n_train + n_val])
+        test_all.extend(cam_entries[n_train + n_val:])
+    return {
+        "train": sort_by_timestamp(train_all),
+        "val": val_all,
+        "test": test_all,
+    }
+
+
 def write_list(path: str, entries: List[Dict], with_mask_file: bool) -> None:
     os.makedirs(os.path.dirname(path), exist_ok=True)
     with open(path, "w") as fh:
@@ -214,16 +252,28 @@ def write_list(path: str, entries: List[Dict], with_mask_file: bool) -> None:
                 fh.write(f"{e['image']}\n")
 
 
-def write_training_variants(train_entries: List[Dict], base_dir: str) -> None:
+def write_training_variants(train_entries: List[Dict], base_dir: str, split_name: str = "", per_camera: bool = False) -> None:
     train_dir = os.path.join(base_dir, "train")
     for pct in (100, 80, 60, 40, 20):
-        take = int(len(train_entries) * pct / 100)
-        # use the LAST `take` entries (most recent) rather than the first
-        subset = train_entries[-take:] if take > 0 else []
+        if per_camera:
+            # Take the first N% of each camera's training data independently, then merge
+            cameras = sorted({e["camera"] for e in train_entries if e.get("camera")})
+            subset_list: List[Dict] = []
+            for cam in cameras:
+                cam_entries = [e for e in train_entries if e.get("camera") == cam]
+                take = int(len(cam_entries) * pct / 100)
+                subset_list.extend(cam_entries[:take] if take > 0 else [])
+            subset = sort_by_timestamp(subset_list)
+        else:
+            take = int(len(train_entries) * pct / 100)
+            # use the LAST `take` entries (most recent) rather than the first
+            subset = train_entries[-take:] if take > 0 else []
         with_masks = [e for e in subset if e.get("mask")]
         without_masks = [e for e in subset if not e.get("mask")]
         write_list(os.path.join(train_dir, f"{pct}_with_masks.txt"), with_masks, True)
         write_list(os.path.join(train_dir, f"{pct}_without_masks.txt"), without_masks, False)
+        if split_name:
+            print_distribution_with_wo(subset, f"{split_name} train/{pct}%")
 
 
 def write_val_test(ts: Dict[str, List[Dict]], base_dir: str) -> None:
@@ -332,21 +382,37 @@ def check_split_set(split_dir: str) -> None:
         raise ValueError(f"WITHOUT_MASK entries appear multiple times in original listing for {split_dir}: {multiple_wo[:5]}")
 
 
+def print_split_distributions(splits: Dict[str, List[Dict]], split_name: str) -> None:
+    print(f"\n=== Distributions for {split_name} ===")
+    print_distribution_with_wo(splits["val"], f"{split_name} val")
+    print_distribution_with_wo(splits["test"], f"{split_name} test")
+
+
 def make_splits(all_entries: List[Dict]) -> None:
     os.makedirs(OUT_BASE, exist_ok=True)
     ts = split_timestamp(all_entries)
     ts_dir = os.path.join(OUT_BASE, "split_by_timestamp")
     os.makedirs(ts_dir, exist_ok=True)
-    write_training_variants(ts["train"], ts_dir)
+    write_training_variants(ts["train"], ts_dir, "split_by_timestamp")
     write_val_test(ts, ts_dir)
     build_metadata(ts_dir)
+    print_split_distributions(ts, "split_by_timestamp")
 
     cam = split_camera(all_entries)
     cam_dir = os.path.join(OUT_BASE, "split_by_camera")
     os.makedirs(cam_dir, exist_ok=True)
-    write_training_variants(cam["train"], cam_dir)
+    write_training_variants(cam["train"], cam_dir, "split_by_camera")
     write_val_test(cam, cam_dir)
     build_metadata(cam_dir)
+    print_split_distributions(cam, "split_by_camera")
+
+    standard = split_standard(all_entries)
+    standard_dir = os.path.join(OUT_BASE, "split_standard")
+    os.makedirs(standard_dir, exist_ok=True)
+    write_training_variants(standard["train"], standard_dir, "split_standard", per_camera=True)
+    write_val_test(standard, standard_dir)
+    build_metadata(standard_dir)
+    print_split_distributions(standard, "split_standard")
 
 
 def main() -> None:
@@ -361,7 +427,7 @@ def main() -> None:
 
     make_splits(all_entries)
 
-    for split in ("split_by_timestamp", "split_by_camera"):
+    for split in ("split_by_timestamp", "split_by_camera", "split_standard"):
         split_dir = os.path.join(OUT_BASE, split)
         print(f"Running checks for {split_dir}...")
         check_split_set(split_dir)
