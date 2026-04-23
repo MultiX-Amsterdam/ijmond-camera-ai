@@ -13,11 +13,11 @@ Files produced
 smoke5k         (2)  smoke5k_train.txt, smoke5k_test.txt
 citizen         (2)  citizen_with_mask.txt, citizen_without_mask.txt
 unlabeled       (1)  unlabeled.txt
-expert val/test (2)  expert_timestamp_val.txt,
-                     expert_timestamp_test.txt
-expert train   (10)  expert_timestamp_train_{P}_{with,without}_masks.txt
+expert val/test (2)  expert_standard_val.txt,
+                     expert_standard_test.txt
+expert train   (10)  expert_standard_train_{P}_{with,without}_masks.txt
                      for P in 100, 80, 60, 40, 20
-mix train      (10)  mix_timestamp_train_{P}_{with,without}_masks.txt
+mix train      (10)  mix_standard_train_{P}_{with,without}_masks.txt
                      for P in 100, 80, 60, 40, 20
 
 Total: 27 files.
@@ -113,14 +113,23 @@ def main() -> None:
     write_lines("expert_standard_test", bal_test_lines)
 
     print("\n=== expert_standard_train_{P}_{with,without}_masks ===")
+    expert_standard_with: dict[str, list[str]] = {}
+    expert_standard_without: dict[str, list[str]] = {}
+    for p in PERCENTAGES:
+        expert_standard_with[str(p)] = load(f"{SEG_CAM_BAL}train/{p}_with_masks.txt", SEG_CROPPED)
+        expert_standard_without[str(p)] = load(f"{SEG_CAM_BAL}train/{p}_without_masks.txt", SEG_CROPPED)
+        write_lines(f"expert_standard_train_{p}_with_masks",    expert_standard_with[str(p)])
+        write_lines(f"expert_standard_train_{p}_without_masks", expert_standard_without[str(p)])
+
+    print("\n=== mix_standard_train_{P}_{with,without}_masks (expert_standard + citizen) ===")
     for p in PERCENTAGES:
         write_lines(
-            f"expert_standard_train_{p}_with_masks",
-            load(f"{SEG_CAM_BAL}train/{p}_with_masks.txt", SEG_CROPPED),
+            f"mix_standard_train_{p}_with_masks",
+            expert_standard_with[str(p)] + citizen_with,
         )
         write_lines(
-            f"expert_standard_train_{p}_without_masks",
-            load(f"{SEG_CAM_BAL}train/{p}_without_masks.txt", SEG_CROPPED),
+            f"mix_standard_train_{p}_without_masks",
+            expert_standard_without[str(p)] + citizen_without,
         )
 
     total = len(os.listdir(EXP_DIR))
