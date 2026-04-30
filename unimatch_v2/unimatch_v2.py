@@ -230,6 +230,10 @@ def main():
         # citizen forward pass are held in memory alongside the supervised and
         # unlabeled passes until loss.backward() completes.
         citizen_batch_size = max(smoke_batch_size // 4, 1)
+        # Draw exactly one citizen batch per training iteration so every epoch
+        # sees a fresh, independently sampled set of citizen images rather than
+        # repeating the same cached batches via cycle().
+        citizen_num_samples = len(trainloader_u) * citizen_batch_size
         trainloader_citizen_u = DataLoader(
             trainset_citizen_u,
             batch_size=citizen_batch_size,
@@ -239,6 +243,7 @@ def main():
             sampler=torch.utils.data.RandomSampler(
                 trainset_citizen_u,
                 replacement=True,
+                num_samples=citizen_num_samples,
                 generator=torch.Generator().manual_seed(2),
             ),
         )
