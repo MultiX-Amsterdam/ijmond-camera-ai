@@ -5,6 +5,7 @@ import os
 import pprint
 
 from itertools import chain, cycle
+import timm.models
 import torch
 from torch import nn
 import torch.backends.cudnn as cudnn
@@ -63,15 +64,26 @@ def main():
         'giant': {'encoder_size': 'giant', 'features': 384, 'out_channels': [1536, 1536, 1536, 1536]}
     }
 
+    is_dinov3 = cfg['backbone'].startswith('dinov3_')
+
     model = DPT(**{
         **model_configs[cfg['backbone'].split('_')[-1]],
         'nclass': cfg['nclass'],
         'use_dcp': cfg.get('use_dcp', False),
+        'backbone_type': 'dinov3' if is_dinov3 else 'dinov2',
     })
 
-    state_dict = torch.load(f'./pretrained/{cfg["backbone"]}.pth')
-
-    model.backbone.load_state_dict(state_dict)
+    # --- DINOv2-only: remove when dropping DINOv2 ---
+    if not is_dinov3:
+        state_dict = torch.load(f'./pretrained/{cfg["backbone"]}.pth')
+        model.backbone.load_state_dict(state_dict)
+    # --- end DINOv2-only ---
+    else:
+        timm.models.load_checkpoint(
+            model.backbone.model,
+            f'./pretrained/{cfg["backbone"]}.pth',
+            strict=False,
+        )
 
     if cfg['lock_backbone']:
         model.lock_backbone()
@@ -214,9 +226,13 @@ def main():
             id_path=citizen_u_dataset,
             use_dcp=cfg.get('use_dcp', False),
         )
+        # Use a smaller batch for citizen to avoid OOM: activations for the
+        # citizen forward pass are held in memory alongside the supervised and
+        # unlabeled passes until loss.backward() completes.
+        citizen_batch_size = max(smoke_batch_size // 4, 1)
         trainloader_citizen_u = DataLoader(
             trainset_citizen_u,
-            batch_size=batch_size,
+            batch_size=citizen_batch_size,
             pin_memory=True,
             num_workers=4,
             drop_last=True,
@@ -228,8 +244,8 @@ def main():
         )
         if rank == 0:
             logger.info(
-                'Citizen-unlabeled dataset: %s  (%d samples, weight=%.2f)\n' %
-                (citizen_u_dataset, len(trainset_citizen_u), citizen_u_weight)
+                'Citizen-unlabeled dataset: %s  (%d samples, weight=%.2f, batch_size=%d)\n' %
+                (citizen_u_dataset, len(trainset_citizen_u), citizen_u_weight, citizen_batch_size)
             )
     else:
         trainloader_citizen_u = None
@@ -487,7 +503,7 @@ def main():
                                             total_loss_s.avg, total_mask_ratio.avg))
 
         if rank == 0:
-            evaluation = evaluate_new(model, valloader, multiplier=14)
+            evaluation = evaluate_new(model, valloader, multiplier=model.module.patch_size)
 
             logger.info(
                 '***** Evaluation ***** >>>> gIoU: {:.4f}, gF1: {:.4f}, gAccu: {:.4f}'.format(

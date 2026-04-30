@@ -14,6 +14,7 @@
 #   Check node status:
 #     sinfo -N -o "%20N %10c %10m %25G %10T %P"
 #     sinfo -n ivi-cn032 -o "%N %C %e %G"
+#     scontrol show node ivi-cn032
 #
 # BEFORE SUBMITTING:
 #   1. Set NUM_GPUS below and update --gres=gpu:N in the header accordingly.
@@ -31,18 +32,19 @@
 
 #SBATCH --job-name=sbatch_ijmond_ai_train
 #SBATCH --ntasks=1
-#SBATCH --nodelist=ivi-cn032
+#SBATCH --nodes=1
+#SBATCH --nodelist=ivi-cn002,ivi-cn004,ivi-cn010,ivi-cn014
 #SBATCH --cpus-per-task=32
 #SBATCH --gres=gpu:2
-#SBATCH --time=2:00:00
-#SBATCH --mem=185G
+#SBATCH --time=48:00:00
+#SBATCH --mem=160G
 #SBATCH --output=/dev/null
 #SBATCH --error=/dev/null
 #SBATCH --account=all6000users
-#SBATCH --partition=all6000
+#SBATCH --partition=all
 
 # ---- Training parameters (modify as needed) ---------------------------------
-exp="dinov2_base_sbatch_testrun"
+exp="dinov3_base_sbatch_testrun"
 unlabeled_sample_size=1500
 unlabeled_sample_seed=23838742
 

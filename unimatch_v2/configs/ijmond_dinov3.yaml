@@ -1,0 +1,30 @@
+# arguments for dataset
+dataset: ijmond
+data_root: /home/ych/ijmond-camera-ai/bbox_learn/dataset
+nclass: 2
+crop_size: 352 # must be divisible by 16 (DINOv3 patch size)
+base_size: 704 # long side rescaled to this before scale jitter (2x crop_size)
+
+# arguments for training
+epochs: 1 # use 100 epochs for full training
+batch_size: 30 # per GPU (decrease this if using multiple GPUs to avoid OOM)
+lr: 0.000014 # use 0.00001 for single GPU, 0.000014 for two GPUs, 0.000017 for three, and 0.00002 for four
+lr_multi: 40.0
+criterion:
+  name: CELoss
+  kwargs:
+    ignore_index: 255
+conf_thresh: 0.95
+
+# Boundary leniency: reduces loss penalty at smoke/background edges
+boundary_lenience:
+  enabled: False
+  alpha: 0.8        # leniency strength in [0, 1]; 0 = standard CE, 1 = full leniency at edges
+  window_size: 11    # AvgPool2d kernel size for local density estimation
+  band_kernel_size: 11  # morphological dilation/erosion kernel for the eval exclusion band
+
+# arguments for model
+model: dpt
+backbone: dinov3_small
+lock_backbone: True
+use_dcp: True

@@ -3,7 +3,10 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
+from model.backbone.dinov3_timm import DINOv3Backbone
+# --- DINOv2-only: remove when dropping DINOv2 ---
 from model.backbone.dinov2 import DINOv2
+# --- end DINOv2-only ---
 from model.util.blocks import FeatureFusionBlock, _make_scratch
 
 
@@ -119,6 +122,7 @@ class DPT(nn.Module):
         use_bn=False,
         use_dcp=False,
         dcp_channels=128,
+        backbone_type='dinov2',
     ):
         super(DPT, self).__init__()
 
@@ -130,7 +134,13 @@ class DPT(nn.Module):
         }
 
         self.encoder_size = encoder_size
-        self.backbone = DINOv2(model_name=encoder_size)
+        # --- DINOv2-only: remove when dropping DINOv2 ---
+        if backbone_type == "dinov2":
+            self.backbone = DINOv2(model_name=encoder_size)
+        # --- end DINOv2-only ---
+        else:
+            self.backbone = DINOv3Backbone(size=encoder_size)
+        self.patch_size = self.backbone.patch_size
 
         self.head = DPTHead(nclass, self.backbone.embed_dim, features, use_bn, out_channels=out_channels)
 
@@ -166,7 +176,7 @@ class DPT(nn.Module):
         else:
             rgb = x
 
-        patch_h, patch_w = rgb.shape[-2] // 14, rgb.shape[-1] // 14
+        patch_h, patch_w = rgb.shape[-2] // self.patch_size, rgb.shape[-1] // self.patch_size
 
         features = self.backbone.get_intermediate_layers(
             rgb, self.intermediate_layer_idx[self.encoder_size]
@@ -200,11 +210,11 @@ class DPT(nn.Module):
 
             out = self.head(features, patch_h, patch_w)
 
-            out = F.interpolate(out, (patch_h * 14, patch_w * 14), mode='bilinear', align_corners=True)
+            out = F.interpolate(out, (patch_h * self.patch_size, patch_w * self.patch_size), mode='bilinear', align_corners=True)
 
             return out
 
         out = self.head(features, patch_h, patch_w)
-        out = F.interpolate(out, (patch_h * 14, patch_w * 14), mode='bilinear', align_corners=True)
+        out = F.interpolate(out, (patch_h * self.patch_size, patch_w * self.patch_size), mode='bilinear', align_corners=True)
 
         return out

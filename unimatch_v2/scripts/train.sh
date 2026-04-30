@@ -14,6 +14,12 @@ fi
 # Example usage:
 #   bash scripts/train.sh
 
+# You can also train the model using interactive srun sessions.
+# Before running, allocate a node with srun:
+#   srun -u --pty --nodelist=ivi-cn002,ivi-cn004,ivi-cn010,ivi-cn014 --gres=gpu:2 --mem=160G --cpus-per-task=32 --time=2:00:00 -D $(pwd) bash -i
+# Then run:
+#   bash scripts/train.sh 2
+
 # modify these arguments if you want to try other splits or methods
 # method: ['unimatch_v2', 'supervised', 'test_model']
 # exp: just for specifying the 'save_path'
@@ -23,7 +29,7 @@ NUM_GPUS=${1:-1}
 PORT=${2:-9271}
 MASTER_ADDR=${3:-"localhost"}
 
-exp='dinov2_base_dcp_testrun'
+exp='dinov2_base_testrun'
 unlabeled_sample_size=1500
 unlabeled_sample_seed=23838742
 

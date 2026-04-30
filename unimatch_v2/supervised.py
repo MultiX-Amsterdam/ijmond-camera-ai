@@ -4,6 +4,7 @@ import glob
 import os
 import pprint
 
+import timm.models
 import torch
 import numpy as np
 from torch import nn
@@ -255,15 +256,26 @@ def main():
         'giant': {'encoder_size': 'giant', 'features': 384, 'out_channels': [1536, 1536, 1536, 1536]}
     }
 
+    is_dinov3 = cfg['backbone'].startswith('dinov3_')
+
     model = DPT(**{
         **model_configs[cfg['backbone'].split('_')[-1]],
         'nclass': cfg['nclass'],
         'use_dcp': cfg.get('use_dcp', False),
+        'backbone_type': 'dinov3' if is_dinov3 else 'dinov2',
     })
 
-    state_dict = torch.load(f'./pretrained/{cfg["backbone"]}.pth')
-
-    model.backbone.load_state_dict(state_dict)
+    # --- DINOv2-only: remove when dropping DINOv2 ---
+    if not is_dinov3:
+        state_dict = torch.load(f'./pretrained/{cfg["backbone"]}.pth')
+        model.backbone.load_state_dict(state_dict)
+    # --- end DINOv2-only ---
+    else:
+        timm.models.load_checkpoint(
+            model.backbone.model,
+            f'./pretrained/{cfg["backbone"]}.pth',
+            strict=False,
+        )
 
     if cfg['lock_backbone']:
         model.lock_backbone()
@@ -433,7 +445,7 @@ def main():
                 logger.info('Iters: {:}, LR: {:.7f}, Total loss: {:.3f}'.format(i, optimizer.param_groups[0]['lr'], total_loss.avg))
 
         if rank == 0:
-            evaluation = evaluate_new(model, valloader, multiplier=14)
+            evaluation = evaluate_new(model, valloader, multiplier=model.module.patch_size)
 
             logger.info(
                 '***** Evaluation ***** >>>> gIoU: {:.4f}, gF1: {:.4f}, gAccu: {:.4f}'.format(

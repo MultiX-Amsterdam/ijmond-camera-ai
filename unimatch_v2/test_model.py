@@ -4,6 +4,7 @@ import logging
 import os
 import pprint
 
+import timm.models
 import torch
 import torch.backends.cudnn as cudnn
 from torch.utils.data import DataLoader
@@ -56,15 +57,26 @@ def main():
         'giant': {'encoder_size': 'giant', 'features': 384, 'out_channels': [1536, 1536, 1536, 1536]}
     }
 
+    is_dinov3 = cfg['backbone'].startswith('dinov3_')
+
     model = DPT(**{
         **model_configs[cfg['backbone'].split('_')[-1]],
         'nclass': cfg['nclass'],
         'use_dcp': cfg.get('use_dcp', False),
+        'backbone_type': 'dinov3' if is_dinov3 else 'dinov2',
     })
 
-    state_dict = torch.load(f'./pretrained/{cfg["backbone"]}.pth')
-
-    model.backbone.load_state_dict(state_dict)
+    # --- DINOv2-only: remove when dropping DINOv2 ---
+    if not is_dinov3:
+        state_dict = torch.load(f'./pretrained/{cfg["backbone"]}.pth')
+        model.backbone.load_state_dict(state_dict)
+    # --- end DINOv2-only ---
+    else:
+        timm.models.load_checkpoint(
+            model.backbone.model,
+            f'./pretrained/{cfg["backbone"]}.pth',
+            strict=False,
+        )
 
     if cfg['lock_backbone']:
         model.lock_backbone()
@@ -139,7 +151,7 @@ def main():
     )
 
     if rank == 0:
-        evaluation = evaluate_new(model, testloader, multiplier=14)
+        evaluation = evaluate_new(model, testloader, multiplier=model.module.patch_size)
 
         logger.info('***** Evaluation *****')
 
@@ -147,7 +159,7 @@ def main():
             logger.info(f"\t{k}: {v:.4f}")
 
         if has_ema:
-            evaluation_ema = evaluate_new(model_ema, testloader, multiplier=14)
+            evaluation_ema = evaluate_new(model_ema, testloader, multiplier=model_ema.patch_size)
 
             print()
 
@@ -158,7 +170,7 @@ def main():
 
         bl_cfg = cfg.get('boundary_lenience', {})
         band_k = bl_cfg.get('band_kernel_size', 7)
-        eval_bf = evaluate_new(model, testloader, multiplier=14, band_kernel_size=band_k)
+        eval_bf = evaluate_new(model, testloader, multiplier=model.module.patch_size, band_kernel_size=band_k)
 
         print()
 
@@ -168,7 +180,7 @@ def main():
             logger.info(f"\t{k}: {v:.4f}")
 
         if has_ema:
-            eval_bf_ema = evaluate_new(model_ema, testloader, multiplier=14, band_kernel_size=band_k)
+            eval_bf_ema = evaluate_new(model_ema, testloader, multiplier=model_ema.patch_size, band_kernel_size=band_k)
 
             print()
 
