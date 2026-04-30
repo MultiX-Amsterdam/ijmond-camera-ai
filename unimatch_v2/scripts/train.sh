@@ -23,7 +23,7 @@ NUM_GPUS=${1:-1}
 PORT=${2:-9271}
 MASTER_ADDR=${3:-"localhost"}
 
-exp='dinov2_base_dcp_soft_edge'
+exp='dinov2_base_dcp_testrun'
 unlabeled_sample_size=1500
 unlabeled_sample_seed=23838742
 
@@ -36,10 +36,14 @@ MODELS=(
     "m-expert"
     "m-mix-20"
     "m-mix-20"
+    "m-mix-20-pseudo"
+    "m-mix-20-pseudo"
 )
 
 METHODS=(
     "supervised"
+    "test_model"
+    "unimatch_v2"
     "test_model"
     "unimatch_v2"
     "test_model"

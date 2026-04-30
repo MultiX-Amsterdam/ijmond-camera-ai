@@ -202,6 +202,38 @@ def main():
         sampler=trainsampler_u
     )
 
+    citizen_u_weight = float(training_cfg.get('citizen_u_weight', 0.0))
+    citizen_u_dataset = training_cfg.get('citizen_u_dataset', '').strip()
+    if citizen_u_weight > 0 and citizen_u_dataset:
+        trainset_citizen_u = SemiSmokeDataset(
+            current_dataset,
+            cfg['data_root'],
+            'train_citizen_u',
+            cfg['crop_size'],
+            base_size=cfg.get('base_size'),
+            id_path=citizen_u_dataset,
+            use_dcp=cfg.get('use_dcp', False),
+        )
+        trainloader_citizen_u = DataLoader(
+            trainset_citizen_u,
+            batch_size=batch_size,
+            pin_memory=True,
+            num_workers=4,
+            drop_last=True,
+            sampler=torch.utils.data.RandomSampler(
+                trainset_citizen_u,
+                replacement=True,
+                generator=torch.Generator().manual_seed(2),
+            ),
+        )
+        if rank == 0:
+            logger.info(
+                'Citizen-unlabeled dataset: %s  (%d samples, weight=%.2f)\n' %
+                (citizen_u_dataset, len(trainset_citizen_u), citizen_u_weight)
+            )
+    else:
+        trainloader_citizen_u = None
+
     trainset_smoke = SemiSmokeDataset(
         current_dataset,
         cfg['data_root'],
@@ -332,6 +364,8 @@ def main():
 
         loader = zip(combined_loader, trainloader_u)
 
+        citizen_u_iter = cycle(iter(trainloader_citizen_u)) if trainloader_citizen_u is not None else None
+
         model.train()
 
         for i, ((img_x, mask_x),
@@ -381,6 +415,37 @@ def main():
             loss_u_s2 = loss_u_s2.sum() / max((ignore_mask_cutmixed2 != 255).sum().item(), 1)
 
             loss_u_s = (loss_u_s1 + loss_u_s2) / 2.0
+
+            if citizen_u_iter is not None:
+                _, img_c_s1, img_c_s2, mask_c_w, cutmix_box_c1, cutmix_box_c2 = next(citizen_u_iter)
+                img_c_s1 = img_c_s1.cuda(local_rank, non_blocking=True)
+                img_c_s2 = img_c_s2.cuda(local_rank, non_blocking=True)
+                mask_c_w = mask_c_w.cuda(local_rank, non_blocking=True)
+                cutmix_box_c1 = cutmix_box_c1.cuda(local_rank, non_blocking=True)
+                cutmix_box_c2 = cutmix_box_c2.cuda(local_rank, non_blocking=True)
+
+                cutmix_mask_c1 = cutmix_box_c1.unsqueeze(1).expand(img_c_s1.shape) == 1
+                img_c_s1 = torch.where(cutmix_mask_c1, img_c_s1.flip(0), img_c_s1)
+                cutmix_mask_c2 = cutmix_box_c2.unsqueeze(1).expand(img_c_s2.shape) == 1
+                img_c_s2 = torch.where(cutmix_mask_c2, img_c_s2.flip(0), img_c_s2)
+
+                pred_c_s1, pred_c_s2 = model(torch.cat((img_c_s1, img_c_s2)), comp_drop=True).chunk(2)
+
+                mask_c_cutmixed1 = mask_c_w.clone()
+                mask_c_cutmixed1[cutmix_box_c1 == 1] = mask_c_w.flip(0)[cutmix_box_c1 == 1]
+                mask_c_cutmixed2 = mask_c_w.clone()
+                mask_c_cutmixed2[cutmix_box_c2 == 1] = mask_c_w.flip(0)[cutmix_box_c2 == 1]
+
+                loss_c_s1 = criterion_u(pred_c_s1, mask_c_cutmixed1)
+                loss_c_s1 = loss_c_s1 * (mask_c_cutmixed1 != 255)
+                loss_c_s1 = loss_c_s1.sum() / max((mask_c_cutmixed1 != 255).sum().item(), 1)
+
+                loss_c_s2 = criterion_u(pred_c_s2, mask_c_cutmixed2)
+                loss_c_s2 = loss_c_s2 * (mask_c_cutmixed2 != 255)
+                loss_c_s2 = loss_c_s2.sum() / max((mask_c_cutmixed2 != 255).sum().item(), 1)
+
+                loss_c_s = (loss_c_s1 + loss_c_s2) / 2.0
+                loss_u_s = (1.0 - citizen_u_weight) * loss_u_s + citizen_u_weight * loss_c_s
 
             loss = (loss_x + loss_u_s) / 2.0
 

@@ -173,10 +173,16 @@ class SemiSmokeDataset(Dataset):
         img_s2 = normalize(img_s2)
         img_s2 = self._cat_dcp(img_s2_pil, img_s2)
         mask = torch.from_numpy(np.array(mask)).long()
-        ignore_mask[mask == 255] = 255
 
         img_w_t = normalize(img_w)
         img_w_t = self._cat_dcp(img_w_pil, img_w_t)
+
+        if self.mode == 'train_citizen_u':
+            # Return the SAM pseudo-mask directly in position 3.
+            # Values: 0 = background, 1 = smoke, 255 = crop-padded pixels ignored in loss.
+            return img_w_t, img_s1, img_s2, mask, cutmix_box1, cutmix_box2
+
+        ignore_mask[mask == 255] = 255
         return img_w_t, img_s1, img_s2, ignore_mask, cutmix_box1, cutmix_box2
 
     def _cat_dcp(self, img_pil, img_tensor):
