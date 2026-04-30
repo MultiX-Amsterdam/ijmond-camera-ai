@@ -1,0 +1,9 @@
+# arguments for setting up and training a model
+configuration: configs/ijmond_dinov2.yaml
+smoke_dataset: experiment/expert_standard_train_20_with_masks.txt
+clear_dataset: experiment/expert_standard_train_20_without_masks.txt
+unlabeled_dataset: experiment/unlabeled.txt
+validation_dataset: experiment/expert_standard_val.txt
+test_dataset: experiment/expert_standard_test.txt
+test_model: best.pth
+pretrained_model: m-zeroshot
