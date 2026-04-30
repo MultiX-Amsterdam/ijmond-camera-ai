@@ -25,6 +25,6 @@ boundary_lenience:
 
 # arguments for model
 model: dpt
-backbone: dinov3_small
+backbone: dinov3_base
 lock_backbone: True
 use_dcp: True
