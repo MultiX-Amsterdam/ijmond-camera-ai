@@ -1,14 +1,14 @@
 # arguments for dataset
 dataset: smoke5k
-data_root: /home/ych/ijmond-camera-ai/bbox_learn/dataset
+data_root: /home/yhsu/ijmond-camera-ai/bbox_learn/dataset
 nclass: 2
 crop_size: 252 # must be divisible by 14 (DINOv2 patch size)
 base_size: 518 # long side rescaled to this before scale jitter (2x crop_size)
 
 # arguments for training
-epochs: 1 # use 100 epochs for full training
+epochs: 200 # use 200 epochs for full training
 batch_size: 60 # per GPU (decrease this if using multiple GPUs to avoid OOM)
-lr: 0.000022  # use 0.000016 for single GPU, 0.000022 for two GPUs, 0.000027 for three, and 0.00032 for four
+lr: 0.00001 # use 0.000005 for single GPU, 0.00001 for two GPUs, 0.000015 for three, and 0.00002 for four
 lr_multi: 40.0
 criterion:
   name: CELoss
@@ -20,8 +20,8 @@ conf_thresh: 0.95
 boundary_lenience:
   enabled: False
   alpha: 0.8        # leniency strength in [0, 1]; 0 = standard CE, 1 = full leniency at edges
-  window_size: 7    # AvgPool2d kernel size for local density estimation
-  band_kernel_size: 7  # morphological dilation/erosion kernel for the eval exclusion band
+  window_size: 11    # AvgPool2d kernel size for local density estimation
+  band_kernel_size: 11  # morphological dilation/erosion kernel for the eval exclusion band
 
 # arguments for model
 model: dpt
