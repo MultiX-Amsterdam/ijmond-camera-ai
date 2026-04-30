@@ -1,5 +1,5 @@
 # arguments for setting up and training a model
-configuration: configs/ijmond_dinov2.yaml
+configuration: configs/ijmond_dinov3.yaml
 smoke_dataset: experiment/expert_standard_train_60_with_masks.txt
 clear_dataset: experiment/expert_standard_train_60_without_masks.txt
 unlabeled_dataset: experiment/unlabeled.txt

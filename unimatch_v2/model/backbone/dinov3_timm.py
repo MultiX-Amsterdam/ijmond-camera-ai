@@ -17,7 +17,9 @@ class DINOv3Backbone(nn.Module):
 
     Notes
     -----
-    Weights are **not** loaded here.  Call
+    Weights are **not** loaded here.  Download the pre-converted timm safetensors
+    from HuggingFace (``timm/vit_{size}_patch16_dinov3.lvd1689m``) and save as
+    ``pretrained/dinov3_{size}.safetensors``.  Then call
     ``timm.models.load_checkpoint(backbone.model, path, strict=False)`` after
     construction.
 

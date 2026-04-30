@@ -74,7 +74,7 @@ def main():
     else:
         timm.models.load_checkpoint(
             model.backbone.model,
-            f'./pretrained/{cfg["backbone"]}.pth',
+            f'./pretrained/{cfg["backbone"]}.safetensors',
             strict=False,
         )
 

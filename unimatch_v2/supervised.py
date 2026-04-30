@@ -273,7 +273,7 @@ def main():
     else:
         timm.models.load_checkpoint(
             model.backbone.model,
-            f'./pretrained/{cfg["backbone"]}.pth',
+            f'./pretrained/{cfg["backbone"]}.safetensors',
             strict=False,
         )
 
@@ -300,7 +300,7 @@ def main():
         ],
         lr=cfg['lr'],
         betas=(0.9, 0.999),
-        weight_decay=0.01
+        weight_decay=cfg['weight_decay']
     )
 
     model = torch.nn.parallel.DistributedDataParallel(
@@ -433,7 +433,7 @@ def main():
 
             iters = epoch * len(trainloader) + i
 
-            lr = cfg['lr'] * (1 - iters / total_iters) ** 0.9
+            lr = max(cfg['lr'] * (1 - iters / total_iters) ** 0.9, cfg['min_lr'])
             optimizer.param_groups[0]["lr"] = lr
             optimizer.param_groups[1]["lr"] = lr * cfg['lr_multi']
 
