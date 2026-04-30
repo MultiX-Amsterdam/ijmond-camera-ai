@@ -36,7 +36,7 @@
 #SBATCH --nodelist=ivi-cn002,ivi-cn004,ivi-cn010,ivi-cn014
 #SBATCH --cpus-per-task=32
 #SBATCH --gres=gpu:2
-#SBATCH --time=48:00:00
+#SBATCH --time=96:00:00
 #SBATCH --mem=160G
 #SBATCH --output=/dev/null
 #SBATCH --error=/dev/null
@@ -69,10 +69,46 @@ MODELS=(
     "m-mix-80"
     "m-mix-100"
     "m-mix-100"
+    "m-mix-20-pseudo"
+    "m-mix-20-pseudo"
+    "m-mix-40-pseudo"
+    "m-mix-40-pseudo"
+    "m-mix-60-pseudo"
+    "m-mix-60-pseudo"
+    "m-mix-80-pseudo"
+    "m-mix-80-pseudo"
+    "m-mix-100-pseudo"
+    "m-mix-100-pseudo"
+    "m-expert-20"
+    "m-expert-20"
+    "m-expert-40"
+    "m-expert-40"
+    "m-expert-60"
+    "m-expert-60"
+    "m-expert-80"
+    "m-expert-80"
 )
 
 METHODS=(
     "supervised"
+    "test_model"
+    "unimatch_v2"
+    "test_model"
+    "unimatch_v2"
+    "test_model"
+    "unimatch_v2"
+    "test_model"
+    "unimatch_v2"
+    "test_model"
+    "unimatch_v2"
+    "test_model"
+    "unimatch_v2"
+    "test_model"
+    "unimatch_v2"
+    "test_model"
+    "unimatch_v2"
+    "test_model"
+    "unimatch_v2"
     "test_model"
     "unimatch_v2"
     "test_model"
@@ -105,6 +141,11 @@ if [ "$NUM_GPUS" -gt 1 ]; then
 fi
 
 RUN_TS=$(date +%Y%m%d_%H%M%S)
+
+if [ "${#MODELS[@]}" -ne "${#METHODS[@]}" ]; then
+    echo "ERROR: MODELS (${#MODELS[@]}) and METHODS (${#METHODS[@]}) arrays must have the same length."
+    exit 1
+fi
 
 for i in "${!MODELS[@]}"; do
     model="${MODELS[$i]}"

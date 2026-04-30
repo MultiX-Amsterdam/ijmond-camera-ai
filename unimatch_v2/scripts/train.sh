@@ -29,7 +29,7 @@ NUM_GPUS=${1:-1}
 PORT=${2:-9271}
 MASTER_ADDR=${3:-"localhost"}
 
-exp='dinov2_base_testrun'
+exp='dinov2_small_testrun'
 unlabeled_sample_size=1500
 unlabeled_sample_seed=23838742
 
@@ -40,6 +40,8 @@ MODELS=(
     "m-citizen"
     "m-expert"
     "m-expert"
+    "m-expert-20"
+    "m-expert-20"
     "m-mix-20"
     "m-mix-20"
     "m-mix-20-pseudo"
@@ -57,12 +59,19 @@ METHODS=(
     "test_model"
     "unimatch_v2"
     "test_model"
+    "unimatch_v2"
+    "test_model"
 )
 
 # Move to the unimatch_v2 root so relative paths (splits/, exp/) resolve correctly
 cd "$(dirname "$0")/.." || exit 1
 
 RUN_TS=$(date +%Y%m%d_%H%M%S)
+
+if [ "${#MODELS[@]}" -ne "${#METHODS[@]}" ]; then
+    echo "ERROR: MODELS (${#MODELS[@]}) and METHODS (${#METHODS[@]}) arrays must have the same length."
+    exit 1
+fi
 
 for i in $(seq 0 $((${#MODELS[@]} - 1))); do
     model="${MODELS[$i]}"
