@@ -415,6 +415,8 @@ def main():
 
         model.train()
         total_loss = AverageMeter()
+        total_loss_ce = AverageMeter()
+        total_loss_dice = AverageMeter()
 
         trainsampler.set_epoch(epoch)
 
@@ -423,13 +425,17 @@ def main():
             img = img.cuda(local_rank, non_blocking=True)
             mask = mask.cuda(local_rank, non_blocking=True)
             pred = model(img)
-            loss = 0.5 * criterion(pred, mask) + 0.5 * dice_loss(pred, mask)
+            loss_ce = criterion(pred, mask)
+            loss_dice = dice_loss(pred, mask)
+            loss = 0.5 * loss_ce + 0.5 * loss_dice
 
             optimizer.zero_grad()
             loss.backward()
             optimizer.step()
 
             total_loss.update(loss.item())
+            total_loss_ce.update(loss_ce.item())
+            total_loss_dice.update(loss_dice.item())
 
             iters = epoch * len(trainloader) + i
 
@@ -439,10 +445,13 @@ def main():
 
             if rank == 0:
                 writer.add_scalar('train/loss_all', loss.item(), iters)
+                writer.add_scalar('train/loss_ce', loss_ce.item(), iters)
+                writer.add_scalar('train/loss_dice', loss_dice.item(), iters)
                 writer.add_scalar('train/lr', lr, iters)
 
             if (i % max(len(trainloader) // 8, 1) == 0) and (rank == 0):
-                logger.info('Iters: {:}, LR: {:.7f}, Total loss: {:.3f}'.format(i, optimizer.param_groups[0]['lr'], total_loss.avg))
+                logger.info('Iters: {:}, LR: {:.7f}, Total loss: {:.3f}, Loss CE: {:.3f}, Loss dice: {:.3f}'.format(
+                    i, optimizer.param_groups[0]['lr'], total_loss.avg, total_loss_ce.avg, total_loss_dice.avg))
 
         if rank == 0:
             evaluation = evaluate_new(model, valloader, multiplier=model.module.patch_size)
