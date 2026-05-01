@@ -99,6 +99,36 @@ class AverageMeter(object):
             self.avg = self.sum / self.count
 
 
+def dice_loss(pred_logits, target, ignore_index=255):
+    """Soft dice loss on the smoke class (class 1).
+
+    Computes 1 - (2 * sum(p * t) + 1) / (sum(p) + sum(t) + 1) where the sum
+    is over all non-ignored pixels across the batch.  Laplace smoothing avoids
+    division by zero on all-background batches.
+
+    Parameters
+    ----------
+    pred_logits : torch.Tensor
+        Shape (B, nclass, H, W). Raw logits.
+    target : torch.Tensor
+        Shape (B, H, W), dtype long. Ground-truth labels.
+    ignore_index : int, optional
+        Label value to exclude from the computation (default 255).
+
+    Returns
+    -------
+    torch.Tensor
+        Scalar loss.
+    """
+    prob = pred_logits.softmax(dim=1)[:, 1]
+    valid = target != ignore_index
+    t = (target == 1).float()
+    p = prob * valid.float()
+    t = t * valid.float()
+    intersection = (p * t).sum()
+    return 1.0 - (2.0 * intersection + 1.0) / (p.sum() + t.sum() + 1.0)
+
+
 def intersectionAndUnion(output, target, K, ignore_index=255):
     # 'K' classes, output and target sizes are N or N * L or N * H * W, each value in range 0 to K - 1.
     assert output.ndim in [1, 2, 3]

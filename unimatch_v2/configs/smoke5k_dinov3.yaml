@@ -6,11 +6,11 @@ crop_size: 256 # must be divisible by 16 (DINOv3 patch size)
 base_size: 512 # long side rescaled to this before scale jitter (2x crop_size)
 
 # arguments for training
-epochs: 60 # use 60 epochs for full training
+epochs: 100 # use 100 epochs for full training
 batch_size: 60 # per GPU (decrease this if using multiple GPUs to avoid OOM)
 lr: 0.00001 # use 0.000005 for single GPU, 0.00001 for two GPUs, 0.000015 for three, and 0.00002 for four
 lr_multi: 40.0
-min_lr: 0.000005  # backbone LR floor; head floor = min_lr * lr_multi
+min_lr: 0.000001  # backbone LR floor; head floor = min_lr * lr_multi
 weight_decay: 0.01
 criterion:
   name: CELoss

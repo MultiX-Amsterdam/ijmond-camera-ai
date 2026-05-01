@@ -19,7 +19,7 @@ import yaml
 from dataset.semi import SemiSmokeDataset
 from model.semseg.dpt import DPT
 from util.classes import CLASSES
-from util.utils import count_params, AverageMeter, intersectionAndUnion, init_log, BoundaryLenienceCELoss
+from util.utils import count_params, AverageMeter, intersectionAndUnion, init_log, BoundaryLenienceCELoss, dice_loss
 from util.dist_helper import setup_distributed
 
 parser = argparse.ArgumentParser(description='UniMatch V2: Pushing the Limit of Semi-Supervised Semantic Segmentation')
@@ -423,7 +423,7 @@ def main():
             img = img.cuda(local_rank, non_blocking=True)
             mask = mask.cuda(local_rank, non_blocking=True)
             pred = model(img)
-            loss = criterion(pred, mask)
+            loss = 0.5 * criterion(pred, mask) + 0.5 * dice_loss(pred, mask)
 
             optimizer.zero_grad()
             loss.backward()

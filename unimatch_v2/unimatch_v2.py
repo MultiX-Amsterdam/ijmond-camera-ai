@@ -15,10 +15,11 @@ from torch.utils.data import DataLoader, SubsetRandomSampler
 from torch.utils.tensorboard import SummaryWriter
 import yaml
 
+from dataset.boxsup import BoxSupDataset, boxsup_collate_fn, make_box_corrected_mask, mil_box_loss
 from dataset.semi import SemiSmokeDataset
 from model.semseg.dpt import DPT
 from supervised import evaluate_new
-from util.utils import count_params, init_log, AverageMeter, BoundaryLenienceCELoss
+from util.utils import count_params, init_log, AverageMeter, BoundaryLenienceCELoss, dice_loss
 from util.dist_helper import setup_distributed
 
 parser = argparse.ArgumentParser(description='UniMatch V2: Pushing the Limit of Semi-Supervised Semantic Segmentation')
@@ -214,46 +215,42 @@ def main():
         sampler=trainsampler_u
     )
 
-    citizen_u_weight = float(training_cfg.get('citizen_u_weight', 0.0))
-    citizen_u_dataset = training_cfg.get('citizen_u_dataset', '').strip()
-    if citizen_u_weight > 0 and citizen_u_dataset:
-        trainset_citizen_u = SemiSmokeDataset(
-            current_dataset,
-            cfg['data_root'],
-            'train_citizen_u',
-            cfg['crop_size'],
-            base_size=cfg.get('base_size'),
-            id_path=citizen_u_dataset,
+    # --- Citizen consistency loader ---
+    citizen_data = training_cfg.get('citizen_data', '').strip()
+    citizen_img = training_cfg.get('citizen_img', '').strip()
+    citizen_correction = bool(training_cfg.get('citizen_correction', True))
+    citizen_mil_weight = float(training_cfg.get('citizen_mil_weight', 0.0))
+    if citizen_data and citizen_img:
+        citizen_json_path = os.path.join(cfg['data_root'], citizen_data)
+        citizen_img_dir = os.path.join(cfg['data_root'], citizen_img)
+        trainset_citizen = BoxSupDataset(
+            citizen_json_path,
+            citizen_img_dir,
+            base_size=cfg.get('base_size', cfg['crop_size']),
             use_dcp=cfg.get('use_dcp', False),
         )
-        # Use a smaller batch for citizen to avoid OOM: activations for the
-        # citizen forward pass are held in memory alongside the supervised and
-        # unlabeled passes until loss.backward() completes.
-        citizen_batch_size = max(smoke_batch_size // 4, 1)
-        # Draw exactly one citizen batch per training iteration so every epoch
-        # sees a fresh, independently sampled set of citizen images rather than
-        # repeating the same cached batches via cycle().
-        citizen_num_samples = len(trainloader_u) * citizen_batch_size
-        trainloader_citizen_u = DataLoader(
-            trainset_citizen_u,
-            batch_size=citizen_batch_size,
+        citizen_num_samples = len(trainloader_u) * smoke_batch_size
+        trainloader_citizen = DataLoader(
+            trainset_citizen,
+            batch_size=smoke_batch_size,
             pin_memory=True,
             num_workers=4,
             drop_last=True,
+            collate_fn=boxsup_collate_fn,
             sampler=torch.utils.data.RandomSampler(
-                trainset_citizen_u,
+                trainset_citizen,
                 replacement=True,
                 num_samples=citizen_num_samples,
-                generator=torch.Generator().manual_seed(2),
+                generator=torch.Generator().manual_seed(4),
             ),
         )
         if rank == 0:
             logger.info(
-                'Citizen-unlabeled dataset: %s  (%d samples, weight=%.2f, batch_size=%d)\n' %
-                (citizen_u_dataset, len(trainset_citizen_u), citizen_u_weight, citizen_batch_size)
+                'Citizen dataset: %s  (%d total images, correction=%s, mil_weight=%.3f, batch_size=%d)\n' %
+                (citizen_data, len(trainset_citizen), citizen_correction, citizen_mil_weight, smoke_batch_size)
             )
     else:
-        trainloader_citizen_u = None
+        trainloader_citizen = None
 
     trainset_smoke = SemiSmokeDataset(
         current_dataset,
@@ -371,7 +368,10 @@ def main():
 
         total_loss = AverageMeter()
         total_loss_x = AverageMeter()
+        total_loss_dice = AverageMeter()
         total_loss_s = AverageMeter()
+        total_loss_c = AverageMeter()
+        total_loss_mil = AverageMeter()
         total_mask_ratio = AverageMeter()
 
         trainloader_smoke.sampler.set_epoch(epoch)
@@ -385,7 +385,7 @@ def main():
 
         loader = zip(combined_loader, trainloader_u)
 
-        citizen_u_iter = cycle(iter(trainloader_citizen_u)) if trainloader_citizen_u is not None else None
+        citizen_iter = cycle(iter(trainloader_citizen)) if trainloader_citizen is not None else None
 
         model.train()
 
@@ -437,46 +437,49 @@ def main():
 
             loss_u_s = (loss_u_s1 + loss_u_s2) / 2.0
 
-            if citizen_u_iter is not None:
-                _, img_c_s1, img_c_s2, mask_c_w, cutmix_box_c1, cutmix_box_c2 = next(citizen_u_iter)
-                img_c_s1 = img_c_s1.cuda(local_rank, non_blocking=True)
-                img_c_s2 = img_c_s2.cuda(local_rank, non_blocking=True)
-                mask_c_w = mask_c_w.cuda(local_rank, non_blocking=True)
-                cutmix_box_c1 = cutmix_box_c1.cuda(local_rank, non_blocking=True)
-                cutmix_box_c2 = cutmix_box_c2.cuda(local_rank, non_blocking=True)
+            if citizen_iter is not None:
+                img_c_w, img_c_s, bboxes_c = next(citizen_iter)
+                img_c_w = img_c_w.cuda(local_rank, non_blocking=True)
+                img_c_s = img_c_s.cuda(local_rank, non_blocking=True)
+                bboxes_c = bboxes_c.cuda(local_rank, non_blocking=True)
 
-                cutmix_mask_c1 = cutmix_box_c1.unsqueeze(1).expand(img_c_s1.shape) == 1
-                img_c_s1 = torch.where(cutmix_mask_c1, img_c_s1.flip(0), img_c_s1)
-                cutmix_mask_c2 = cutmix_box_c2.unsqueeze(1).expand(img_c_s2.shape) == 1
-                img_c_s2 = torch.where(cutmix_mask_c2, img_c_s2.flip(0), img_c_s2)
+                with torch.no_grad():
+                    pred_c_w = model_ema(img_c_w).detach()
+                    conf_c_w = pred_c_w.softmax(dim=1).max(dim=1)[0]
+                    mask_c_w = pred_c_w.argmax(dim=1)
 
-                pred_c_s1, pred_c_s2 = model(torch.cat((img_c_s1, img_c_s2)), comp_drop=True).chunk(2)
+                if citizen_correction:
+                    mask_c_w = make_box_corrected_mask(mask_c_w, bboxes_c)
 
-                mask_c_cutmixed1 = mask_c_w.clone()
-                mask_c_cutmixed1[cutmix_box_c1 == 1] = mask_c_w.flip(0)[cutmix_box_c1 == 1]
-                mask_c_cutmixed2 = mask_c_w.clone()
-                mask_c_cutmixed2[cutmix_box_c2 == 1] = mask_c_w.flip(0)[cutmix_box_c2 == 1]
+                pred_c_s = model(img_c_s)
+                loss_c_s = criterion_u(pred_c_s, mask_c_w)
+                loss_c_s = loss_c_s * (conf_c_w >= cfg['conf_thresh'])
+                loss_c_s = loss_c_s.sum() / max(loss_c_s.numel(), 1)
 
-                loss_c_s1 = criterion_u(pred_c_s1, mask_c_cutmixed1)
-                loss_c_s1 = loss_c_s1 * (mask_c_cutmixed1 != 255)
-                loss_c_s1 = loss_c_s1.sum() / max((mask_c_cutmixed1 != 255).sum().item(), 1)
+                loss_u_s = (loss_u_s1 + loss_u_s2 + loss_c_s) / 3.0
 
-                loss_c_s2 = criterion_u(pred_c_s2, mask_c_cutmixed2)
-                loss_c_s2 = loss_c_s2 * (mask_c_cutmixed2 != 255)
-                loss_c_s2 = loss_c_s2.sum() / max((mask_c_cutmixed2 != 255).sum().item(), 1)
+                if citizen_mil_weight > 0:
+                    loss_mil = mil_box_loss(pred_c_s, bboxes_c)
+                else:
+                    loss_mil = torch.zeros(1).cuda(local_rank)
+            else:
+                loss_c_s = torch.zeros(1).cuda(local_rank)
+                loss_mil = torch.zeros(1).cuda(local_rank)
 
-                loss_c_s = (loss_c_s1 + loss_c_s2) / 2.0
-                loss_u_s = (1.0 - citizen_u_weight) * loss_u_s + citizen_u_weight * loss_c_s
-
-            loss = (loss_x + loss_u_s) / 2.0
+            loss_x_ce = criterion_l(pred_x, mask_x)
+            loss_x_dice = dice_loss(pred_x, mask_x)
+            loss = 0.25 * loss_x_ce + 0.25 * loss_x_dice + 0.5 * loss_u_s + citizen_mil_weight * loss_mil
 
             optimizer.zero_grad()
             loss.backward()
             optimizer.step()
 
             total_loss.update(loss.item())
-            total_loss_x.update(loss_x.item())
+            total_loss_x.update(loss_x_ce.item())
+            total_loss_dice.update(loss_x_dice.item())
             total_loss_s.update(loss_u_s.item())
+            total_loss_c.update(loss_c_s.item())
+            total_loss_mil.update(loss_mil.item())
             mask_ratio = ((conf_u_w >= cfg['conf_thresh']) & (ignore_mask != 255)).sum().item() / max(
                     (ignore_mask != 255).sum().item(), 1)
             total_mask_ratio.update(mask_ratio)
@@ -498,14 +501,22 @@ def main():
 
             if rank == 0:
                 writer.add_scalar('train/loss_all', loss.item(), iters)
-                writer.add_scalar('train/loss_x', loss_x.item(), iters)
+                writer.add_scalar('train/loss_x', loss_x_ce.item(), iters)
+                writer.add_scalar('train/loss_dice', loss_x_dice.item(), iters)
                 writer.add_scalar('train/loss_s', loss_u_s.item(), iters)
+                writer.add_scalar('train/loss_c', loss_c_s.item(), iters)
+                writer.add_scalar('train/loss_mil', loss_mil.item(), iters)
                 writer.add_scalar('train/mask_ratio', mask_ratio, iters)
 
             if (i % max(len(trainloader_u) // 8, 1) == 0) and (rank == 0):
-                logger.info('Iters: {:}, LR: {:.7f}, Total loss: {:.3f}, Loss x: {:.3f}, Loss s: {:.3f}, Mask ratio: '
-                            '{:.3f}'.format(i, optimizer.param_groups[0]['lr'], total_loss.avg, total_loss_x.avg,
-                                            total_loss_s.avg, total_mask_ratio.avg))
+                logger.info(
+                    'Iters: {:}, LR: {:.7f}, Total loss: {:.3f}, Loss x: {:.3f}, Loss dice: {:.3f}, '
+                    'Loss s: {:.3f}, Loss c: {:.3f}, Loss mil: {:.3f}, Mask ratio: {:.3f}'.format(
+                        i, optimizer.param_groups[0]['lr'], total_loss.avg, total_loss_x.avg,
+                        total_loss_dice.avg, total_loss_s.avg, total_loss_c.avg,
+                        total_loss_mil.avg, total_mask_ratio.avg
+                    )
+                )
 
         if rank == 0:
             evaluation = evaluate_new(model, valloader, multiplier=model.module.patch_size)
