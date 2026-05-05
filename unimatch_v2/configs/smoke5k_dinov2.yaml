@@ -16,14 +16,14 @@ criterion:
   name: CELoss
   kwargs:
     ignore_index: 255
-  loss_ce_weight: 0
-  loss_dice_weight: 1
+  loss_ce_weight: 0.5
+  loss_dice_weight: 0.5
   loss_u_weight: 0
 conf_thresh: 0.95
 
 # Boundary leniency: reduces loss penalty at smoke/background edges
 boundary_lenience:
-  enabled: False
+  enabled: True
   alpha: 0.8        # leniency strength in [0, 1]; 0 = standard CE, 1 = full leniency at edges
   window_size: 11    # AvgPool2d kernel size for local density estimation
   band_kernel_size: 11  # morphological dilation/erosion kernel for the eval exclusion band
