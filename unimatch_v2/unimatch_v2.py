@@ -231,7 +231,8 @@ def main():
         trainset_citizen = BoxSupDataset(
             citizen_json_path,
             citizen_img_dir,
-            base_size=cfg.get('base_size', cfg['crop_size']),
+            crop_size=cfg['crop_size'],
+            base_size=cfg.get('base_size'),
             use_dcp=cfg.get('use_dcp', False),
         )
         citizen_num_samples = len(trainloader_u) * smoke_batch_size
@@ -441,10 +442,13 @@ def main():
             loss_u_s = (loss_u_s1 + loss_u_s2) / 2.0
 
             if citizen_iter is not None:
-                img_c_w, img_c_s, bboxes_c = next(citizen_iter)
-                img_c_w = img_c_w.cuda(local_rank, non_blocking=True)
-                img_c_s = img_c_s.cuda(local_rank, non_blocking=True)
-                bboxes_c = bboxes_c.cuda(local_rank, non_blocking=True)
+                img_c_w, img_c_s1, img_c_s2, cutmix_box1_c, cutmix_box2_c, bboxes_c = next(citizen_iter)
+                img_c_w       = img_c_w.cuda(local_rank, non_blocking=True)
+                img_c_s1      = img_c_s1.cuda(local_rank, non_blocking=True)
+                img_c_s2      = img_c_s2.cuda(local_rank, non_blocking=True)
+                cutmix_box1_c = cutmix_box1_c.cuda(local_rank, non_blocking=True)
+                cutmix_box2_c = cutmix_box2_c.cuda(local_rank, non_blocking=True)
+                bboxes_c      = bboxes_c.cuda(local_rank, non_blocking=True)
 
                 with torch.no_grad():
                     pred_c_w = model_ema(img_c_w).detach()
@@ -454,15 +458,34 @@ def main():
                 if citizen_correction:
                     mask_c_w = make_box_corrected_mask(mask_c_w, bboxes_c)
 
-                pred_c_s = model(img_c_s)
-                loss_c_s = criterion_u(pred_c_s, mask_c_w)
-                loss_c_s = loss_c_s * (conf_c_w >= cfg['conf_thresh'])
-                loss_c_s = loss_c_s.sum() / max(loss_c_s.numel(), 1)
+                cutmix_mask1_c = cutmix_box1_c.unsqueeze(1).expand(img_c_s1.shape) == 1
+                img_c_s1 = torch.where(cutmix_mask1_c, img_c_s1.flip(0), img_c_s1)
+                cutmix_mask2_c = cutmix_box2_c.unsqueeze(1).expand(img_c_s2.shape) == 1
+                img_c_s2 = torch.where(cutmix_mask2_c, img_c_s2.flip(0), img_c_s2)
+
+                pred_c_s1, pred_c_s2 = model(torch.cat((img_c_s1, img_c_s2)), comp_drop=True).chunk(2)
+
+                mask_c_w1, conf_c_w1 = mask_c_w.clone(), conf_c_w.clone()
+                mask_c_w2, conf_c_w2 = mask_c_w.clone(), conf_c_w.clone()
+                mask_c_w1[cutmix_box1_c == 1] = mask_c_w.flip(0)[cutmix_box1_c == 1]
+                conf_c_w1[cutmix_box1_c == 1] = conf_c_w.flip(0)[cutmix_box1_c == 1]
+                mask_c_w2[cutmix_box2_c == 1] = mask_c_w.flip(0)[cutmix_box2_c == 1]
+                conf_c_w2[cutmix_box2_c == 1] = conf_c_w.flip(0)[cutmix_box2_c == 1]
+
+                loss_c_s1 = criterion_u(pred_c_s1, mask_c_w1)
+                loss_c_s1 = loss_c_s1 * (conf_c_w1 >= cfg['conf_thresh'])
+                loss_c_s1 = loss_c_s1.sum() / max(loss_c_s1.numel(), 1)
+
+                loss_c_s2 = criterion_u(pred_c_s2, mask_c_w2)
+                loss_c_s2 = loss_c_s2 * (conf_c_w2 >= cfg['conf_thresh'])
+                loss_c_s2 = loss_c_s2.sum() / max(loss_c_s2.numel(), 1)
+
+                loss_c_s = (loss_c_s1 + loss_c_s2) / 2.0
 
                 loss_u_s = (loss_u_s1 + loss_u_s2 + loss_c_s) / 3.0
 
                 if citizen_mil_weight > 0:
-                    loss_mil = mil_box_loss(pred_c_s, bboxes_c)
+                    loss_mil = mil_box_loss(pred_c_s1, bboxes_c)
                 else:
                     loss_mil = torch.zeros(1).cuda(local_rank)
             else:

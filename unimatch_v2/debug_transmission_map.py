@@ -1,10 +1,15 @@
 """
 Debug script: visually verify that the transmission map looks correct on sample images.
 
-Must be run from the unimatch_v2/ directory:
-Usage:
-    python debug_transmission_map.py --id-path </path/to/split.txt> --data-root </path/to/data> --n 8
-    python debug_transmission_map.py --id-path ../bbox_learn/dataset/ijmond_seg/test/cropped/test_with_mask.txt --data-root ../bbox_learn/dataset/ijmond_seg/test/cropped --n 8
+Must be run from the unimatch_v2/ directory.
+
+Example usage:
+
+    python debug_transmission_map.py \
+        --id-path  ../bbox_learn/dataset/experiment/expert_standard_train_100_with_masks.txt \
+        --data-root ../bbox_learn/dataset \
+        --n 4 \
+        --out debug_transmission_map.png
 """
 
 import argparse
@@ -36,7 +41,7 @@ def main():
     parser.add_argument('--seed', type=int, default=42)
     parser.add_argument('--show', action='store_true',
                         help='Display the figure interactively instead of saving')
-    parser.add_argument('--output', type=str, default='debug_transmission_map.png',
+    parser.add_argument('--out', type=str, default='debug_transmission_map.png',
                         help='Output filename when not using --show')
     args = parser.parse_args()
 
@@ -73,8 +78,8 @@ def main():
     if args.show:
         plt.show()
     else:
-        fig.savefig(args.output, dpi=150, bbox_inches='tight')
-        print(f'Saved to {args.output}')
+        fig.savefig(args.out, dpi=150, bbox_inches='tight')
+        print(f'Saved to {args.out}')
 
 
 if __name__ == '__main__':

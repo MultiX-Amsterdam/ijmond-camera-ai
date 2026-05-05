@@ -20,6 +20,7 @@ from torch.utils.data import Dataset
 from torchvision import transforms
 
 from dataset.semi import compute_transmission_map
+from dataset.transform import obtain_cutmix_box
 
 
 _NORMALIZE = transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])
@@ -46,29 +47,6 @@ def _rescale_pil(img, base_size):
         ow = base_size
         oh = max(1, int(h * base_size / w + 0.5))
     return img.resize((ow, oh), Image.BILINEAR)
-
-
-def _rescale_bboxes(bboxes_xywh, orig_w, orig_h, new_w, new_h):
-    """Scale XYWH bboxes to a new image size and convert to XYXY.
-
-    Parameters
-    ----------
-    bboxes_xywh : list of [x, y, w, h]
-    orig_w, orig_h : int
-        Original image dimensions.
-    new_w, new_h : int
-        Target image dimensions after rescaling.
-
-    Returns
-    -------
-    list of [x1, y1, x2, y2]
-    """
-    sx = new_w / orig_w
-    sy = new_h / orig_h
-    result = []
-    for x, y, w, h in bboxes_xywh:
-        result.append([x * sx, y * sy, (x + w) * sx, (y + h) * sy])
-    return result
 
 
 def _hflip_bboxes_xyxy(bboxes_xyxy, img_w):
@@ -114,12 +92,11 @@ def _cat_dcp(img_pil, img_tensor, use_dcp):
 class BoxSupDataset(Dataset):
     """Dataset of citizen images paired with their annotated bounding boxes.
 
-    Each sample returns a weak-augmented and a strong-augmented view of the
-    same image, together with the corresponding XYXY bounding boxes in pixel
-    coordinates of the rescaled image.  Both views share the same random
-    horizontal flip so bboxes remain consistent.
-
-    Only images that have at least one non-null bounding box are included.
+    Applies the same spatial augmentation pipeline as SemiSmokeDataset:
+    rescale → scale jitter (0.5–2.0×) → random crop → horizontal flip.
+    Both weak and strong views share all spatial transforms so bboxes
+    remain consistent.  Strong view additionally receives colour jitter,
+    random grayscale, and Gaussian blur.
 
     Parameters
     ----------
@@ -130,13 +107,15 @@ class BoxSupDataset(Dataset):
         ``w_image``, ``h_image``, or ``None``).
     img_dir : str
         Directory containing ``{id}.png`` image files.
-    base_size : int
-        Target longest-side length for rescaling before augmentation.
+    crop_size : int
+        Output spatial size after random crop (square).
+    base_size : int or None, optional
+        If given, rescale the longest side to this value before scale jitter.
     use_dcp : bool, optional
         If True, append a 4th DCP transmission-map channel (default False).
     """
 
-    def __init__(self, json_path, img_dir, base_size, use_dcp=False):
+    def __init__(self, json_path, img_dir, crop_size, base_size=None, use_dcp=False):
         with open(json_path, "r") as f:
             metadata = json.load(f)
         # Include ALL images: positive (has bboxes) and negative (bbox is null/empty).
@@ -144,6 +123,7 @@ class BoxSupDataset(Dataset):
         # them as all-background targets.
         self.samples = metadata
         self.img_dir = img_dir
+        self.crop_size = crop_size
         self.base_size = base_size
         self.use_dcp = use_dcp
 
@@ -155,46 +135,125 @@ class BoxSupDataset(Dataset):
         img_path = os.path.join(self.img_dir, f"{item['id']}.png")
         img = Image.open(img_path).convert("RGB")
 
-        img = _rescale_pil(img, self.base_size)
-        new_w, new_h = img.size
-
+        # Parse bboxes in original image coordinates.
         bbox_list = item["bbox"] or []
         if bbox_list:
+            orig_w = bbox_list[0]["w_image"]
+            orig_h = bbox_list[0]["h_image"]
             bboxes_xywh = [
                 [b["x_bbox"], b["y_bbox"], b["w_bbox"], b["h_bbox"]]
                 for b in bbox_list
             ]
-            orig_w = bbox_list[0]["w_image"]
-            orig_h = bbox_list[0]["h_image"]
-            bboxes_xyxy = _rescale_bboxes(bboxes_xywh, orig_w, orig_h, new_w, new_h)
+            # Convert to XYXY in original image pixel space.
+            bboxes_xyxy = [[x, y, x + w, y + h] for x, y, w, h in bboxes_xywh]
         else:
+            orig_w, orig_h = img.size
             bboxes_xyxy = []
 
+        # --- 1. Rescale: longest side → base_size ---
+        if self.base_size is not None:
+            img = _rescale_pil(img, self.base_size)
+            new_w, new_h = img.size
+            if bboxes_xyxy:
+                sx = new_w / orig_w
+                sy = new_h / orig_h
+                bboxes_xyxy = [
+                    [x1 * sx, y1 * sy, x2 * sx, y2 * sy]
+                    for x1, y1, x2, y2 in bboxes_xyxy
+                ]
+        else:
+            new_w, new_h = img.size
+            if bboxes_xyxy:
+                sx = new_w / orig_w
+                sy = new_h / orig_h
+                bboxes_xyxy = [
+                    [x1 * sx, y1 * sy, x2 * sx, y2 * sy]
+                    for x1, y1, x2, y2 in bboxes_xyxy
+                ]
+
+        # --- 2. Scale jitter: random long side in [0.5×, 2.0×] ---
+        old_w, old_h = img.size
+        long_side = random.randint(
+            int(max(old_h, old_w) * 0.5), int(max(old_h, old_w) * 2.0)
+        )
+        if old_h > old_w:
+            jitter_h = long_side
+            jitter_w = max(1, int(old_w * long_side / old_h + 0.5))
+        else:
+            jitter_w = long_side
+            jitter_h = max(1, int(old_h * long_side / old_w + 0.5))
+        img = img.resize((jitter_w, jitter_h), Image.BILINEAR)
+        if bboxes_xyxy:
+            sx = jitter_w / old_w
+            sy = jitter_h / old_h
+            bboxes_xyxy = [
+                [x1 * sx, y1 * sy, x2 * sx, y2 * sy]
+                for x1, y1, x2, y2 in bboxes_xyxy
+            ]
+
+        # --- 3. Random crop to crop_size (pad if needed, matching SemiSmokeDataset) ---
+        cw, ch = img.size
+        padw = max(0, self.crop_size - cw)
+        padh = max(0, self.crop_size - ch)
+        if padw > 0 or padh > 0:
+            from PIL import ImageOps
+            img = ImageOps.expand(img, border=(0, 0, padw, padh), fill=0)
+            cw, ch = img.size
+        x_off = random.randint(0, cw - self.crop_size)
+        y_off = random.randint(0, ch - self.crop_size)
+        img = img.crop((x_off, y_off, x_off + self.crop_size, y_off + self.crop_size))
+        if bboxes_xyxy:
+            new_bboxes = []
+            for x1, y1, x2, y2 in bboxes_xyxy:
+                nx1 = max(0.0, x1 - x_off)
+                ny1 = max(0.0, y1 - y_off)
+                nx2 = min(float(self.crop_size), x2 - x_off)
+                ny2 = min(float(self.crop_size), y2 - y_off)
+                if nx2 > nx1 and ny2 > ny1:
+                    new_bboxes.append([nx1, ny1, nx2, ny2])
+            bboxes_xyxy = new_bboxes
+
+        # --- 4. Random horizontal flip ---
         do_flip = random.random() < 0.5
         if do_flip:
             img = img.transpose(Image.FLIP_LEFT_RIGHT)
             if bboxes_xyxy:
-                bboxes_xyxy = _hflip_bboxes_xyxy(bboxes_xyxy, new_w)
+                bboxes_xyxy = _hflip_bboxes_xyxy(bboxes_xyxy, self.crop_size)
 
-        img_s = img.copy()
+        # --- Strong augmentation: two independent colour views (matching train_u) ---
+        img_s1 = img.copy()
+        img_s2 = img.copy()
+
         if random.random() < 0.8:
-            img_s = transforms.ColorJitter(0.5, 0.5, 0.5, 0.25)(img_s)
-        img_s = transforms.RandomGrayscale(p=0.2)(img_s)
+            img_s1 = transforms.ColorJitter(0.5, 0.5, 0.5, 0.25)(img_s1)
+        img_s1 = transforms.RandomGrayscale(p=0.2)(img_s1)
         if random.random() < 0.5:
             sigma = np.random.uniform(0.1, 2.0)
-            img_s = img_s.filter(ImageFilter.GaussianBlur(radius=sigma))
+            img_s1 = img_s1.filter(ImageFilter.GaussianBlur(radius=sigma))
 
-        img_w_t = _NORMALIZE(_TO_TENSOR(img))
-        img_s_t = _NORMALIZE(_TO_TENSOR(img_s))
+        if random.random() < 0.8:
+            img_s2 = transforms.ColorJitter(0.5, 0.5, 0.5, 0.25)(img_s2)
+        img_s2 = transforms.RandomGrayscale(p=0.2)(img_s2)
+        if random.random() < 0.5:
+            sigma = np.random.uniform(0.1, 2.0)
+            img_s2 = img_s2.filter(ImageFilter.GaussianBlur(radius=sigma))
 
-        img_w_t = _cat_dcp(img, img_w_t, self.use_dcp)
-        img_s_t = _cat_dcp(img_s, img_s_t, self.use_dcp)
+        cutmix_box1 = obtain_cutmix_box(self.crop_size, p=0.5)
+        cutmix_box2 = obtain_cutmix_box(self.crop_size, p=0.5)
+
+        img_w_t  = _NORMALIZE(_TO_TENSOR(img))
+        img_s1_t = _NORMALIZE(_TO_TENSOR(img_s1))
+        img_s2_t = _NORMALIZE(_TO_TENSOR(img_s2))
+
+        img_w_t  = _cat_dcp(img,    img_w_t,  self.use_dcp)
+        img_s1_t = _cat_dcp(img_s1, img_s1_t, self.use_dcp)
+        img_s2_t = _cat_dcp(img_s2, img_s2_t, self.use_dcp)
 
         if bboxes_xyxy:
             bboxes_tensor = torch.tensor(bboxes_xyxy, dtype=torch.float32)
         else:
             bboxes_tensor = torch.empty((0, 4), dtype=torch.float32)
-        return img_w_t, img_s_t, bboxes_tensor
+        return img_w_t, img_s1_t, img_s2_t, cutmix_box1, cutmix_box2, bboxes_tensor
 
 
 def boxsup_collate_fn(batch):
@@ -202,15 +261,15 @@ def boxsup_collate_fn(batch):
 
     Parameters
     ----------
-    batch : list of (img_w, img_s, bboxes)
+    batch : list of (img_w, img_s1, img_s2, cutmix_box1, cutmix_box2, bboxes)
 
     Returns
     -------
-    tuple of (imgs_w, imgs_s, bboxes_padded)
-        ``imgs_w`` and ``imgs_s`` are stacked tensors of shape (B, C, H, W).
+    tuple of (imgs_w, imgs_s1, imgs_s2, cutmix_boxes1, cutmix_boxes2, bboxes_padded)
+        Image tensors are shape (B, C, H, W).  CutMix boxes are (B, H, W).
         ``bboxes_padded`` is shape (B, N_max, 4) with ``-1`` for absent entries.
     """
-    imgs_w, imgs_s, bboxes_list = zip(*batch)
+    imgs_w, imgs_s1, imgs_s2, cutmix_boxes1, cutmix_boxes2, bboxes_list = zip(*batch)
     # Guard against all-negative batches where every item has 0 boxes.
     n_max = max(1, max(b.shape[0] for b in bboxes_list))
     padded = []
@@ -220,7 +279,11 @@ def boxsup_collate_fn(batch):
             pad = torch.full((n_max - n, 4), -1.0)
             bboxes = torch.cat([bboxes, pad], dim=0)
         padded.append(bboxes)
-    return torch.stack(imgs_w), torch.stack(imgs_s), torch.stack(padded)
+    return (
+        torch.stack(imgs_w), torch.stack(imgs_s1), torch.stack(imgs_s2),
+        torch.stack(cutmix_boxes1), torch.stack(cutmix_boxes2),
+        torch.stack(padded),
+    )
 
 
 def make_boxsup_mask(pred_argmax, bboxes_padded, conf=None, conf_thresh=0.0):
