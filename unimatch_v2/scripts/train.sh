@@ -38,8 +38,6 @@ MODELS=(
     "m-zeroshot"
     "m-citizen"
     "m-citizen"
-    "m-expert"
-    "m-expert"
     "m-expert-20"
     "m-expert-20"
     "m-mix-20"
@@ -50,8 +48,6 @@ MODELS=(
 
 METHODS=(
     "supervised"
-    "test_model"
-    "unimatch_v2"
     "test_model"
     "unimatch_v2"
     "test_model"

@@ -99,6 +99,45 @@ class AverageMeter(object):
             self.avg = self.sum / self.count
 
 
+class BoundaryLenienceDiceLoss(nn.Module):
+    """Soft dice loss on the smoke class with boundary leniency.
+
+    Each pixel's contribution to the dice numerator and denominator is weighted
+    by W = 1 - alpha * 4 * P * (1 - P), where P is the local smoke density
+    estimated via average pooling. Boundary pixels (P ≈ 0.5) receive reduced
+    weight, making the model less penalised for prediction errors near smoke
+    edges.
+
+    Args:
+        ignore_index: label value to ignore (default 255).
+        alpha: leniency strength in [0, 1] (default 0.5).
+        window_size: AvgPool2d kernel size for local density estimation (default 7).
+    """
+
+    def __init__(self, ignore_index=255, alpha=0.5, window_size=7):
+        super().__init__()
+        self.ignore_index = ignore_index
+        self.alpha = alpha
+        self.window_size = window_size
+
+    def forward(self, logits, target):
+        prob = logits.softmax(dim=1)[:, 1]          # (B, H, W)
+        valid = (target != self.ignore_index).float()
+
+        gt_smoke = (target == 1).float().unsqueeze(1)  # (B, 1, H, W)
+        padding = self.window_size // 2
+        P = F.avg_pool2d(
+            gt_smoke, kernel_size=self.window_size, stride=1, padding=padding
+        ).squeeze(1)                                 # (B, H, W)
+
+        W = 1.0 - self.alpha * 4.0 * P * (1.0 - P)
+
+        p = prob * valid * W
+        t = (target == 1).float() * valid * W
+        intersection = (p * t).sum()
+        return 1.0 - (2.0 * intersection + 1.0) / (p.sum() + t.sum() + 1.0)
+
+
 def dice_loss(pred_logits, target, ignore_index=255):
     """Soft dice loss on the smoke class (class 1).
 

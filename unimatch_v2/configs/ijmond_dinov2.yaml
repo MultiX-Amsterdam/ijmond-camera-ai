@@ -16,6 +16,9 @@ criterion:
   name: CELoss
   kwargs:
     ignore_index: 255
+  loss_ce_weight: 0
+  loss_dice_weight: 0.5
+  loss_u_weight: 0.5
 conf_thresh: 0.95
 
 # Boundary leniency: reduces loss penalty at smoke/background edges

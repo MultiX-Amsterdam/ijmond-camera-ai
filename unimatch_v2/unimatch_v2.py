@@ -19,7 +19,7 @@ from dataset.boxsup import BoxSupDataset, boxsup_collate_fn, make_box_corrected_
 from dataset.semi import SemiSmokeDataset
 from model.semseg.dpt import DPT
 from supervised import evaluate_new
-from util.utils import count_params, init_log, AverageMeter, BoundaryLenienceCELoss, dice_loss
+from util.utils import count_params, init_log, AverageMeter, BoundaryLenienceCELoss, BoundaryLenienceDiceLoss, dice_loss
 from util.dist_helper import setup_distributed
 
 parser = argparse.ArgumentParser(description='UniMatch V2: Pushing the Limit of Semi-Supervised Semantic Segmentation')
@@ -162,11 +162,18 @@ def main():
                 window_size=bl_cfg.get('window_size', 7),
                 reduction='none',
             ).cuda(local_rank)
+            dice_loss_fn = BoundaryLenienceDiceLoss(
+                ignore_index=cfg['criterion']['kwargs'].get('ignore_index', 255),
+                alpha=bl_cfg.get('alpha', 0.5),
+                window_size=bl_cfg.get('window_size', 7),
+            ).cuda(local_rank)
         else:
             criterion_l = nn.CrossEntropyLoss(**cfg['criterion']['kwargs']).cuda(local_rank)
             criterion_u = nn.CrossEntropyLoss(reduction='none').cuda(local_rank)
+            dice_loss_fn = dice_loss
     else:
         raise NotImplementedError('%s criterion is not implemented' % cfg['criterion']['name'])
+
     current_dataset = cfg['dataset']
 
     trainset_u = SemiSmokeDataset(
@@ -425,8 +432,6 @@ def main():
             conf_u_w_cutmixed2[cutmix_box2 == 1] = conf_u_w.flip(0)[cutmix_box2 == 1]
             ignore_mask_cutmixed2[cutmix_box2 == 1] = ignore_mask.flip(0)[cutmix_box2 == 1]
 
-            loss_x = criterion_l(pred_x, mask_x)
-
             loss_u_s1 = criterion_u(pred_u_s1, mask_u_w_cutmixed1)
             loss_u_s1 = loss_u_s1 * ((conf_u_w_cutmixed1 >= cfg['conf_thresh']) & (ignore_mask_cutmixed1 != 255))
             loss_u_s1 = loss_u_s1.sum() / max((ignore_mask_cutmixed1 != 255).sum().item(), 1)
@@ -466,9 +471,12 @@ def main():
                 loss_c_s = torch.zeros(1).cuda(local_rank)
                 loss_mil = torch.zeros(1).cuda(local_rank)
 
-            loss_x_ce = criterion_l(pred_x, mask_x)
-            loss_x_dice = dice_loss(pred_x, mask_x)
-            loss = 0.25 * loss_x_ce + 0.25 * loss_x_dice + 0.5 * loss_u_s + citizen_mil_weight * loss_mil
+            loss_ce_w = cfg['criterion'].get('loss_ce_weight', 0.25)
+            loss_dice_w = cfg['criterion'].get('loss_dice_weight', 0.25)
+            loss_u_w = cfg['criterion'].get('loss_u_weight', 0.5)
+            loss_x_ce = criterion_l(pred_x, mask_x) if loss_ce_w > 0 else torch.zeros(1).cuda(local_rank)
+            loss_x_dice = dice_loss_fn(pred_x, mask_x) if loss_dice_w > 0 else torch.zeros(1).cuda(local_rank)
+            loss = loss_ce_w * loss_x_ce + loss_dice_w * loss_x_dice + loss_u_w * loss_u_s + citizen_mil_weight * loss_mil
 
             optimizer.zero_grad()
             loss.backward()

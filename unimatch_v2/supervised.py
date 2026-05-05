@@ -19,7 +19,7 @@ import yaml
 from dataset.semi import SemiSmokeDataset
 from model.semseg.dpt import DPT
 from util.classes import CLASSES
-from util.utils import count_params, AverageMeter, intersectionAndUnion, init_log, BoundaryLenienceCELoss, dice_loss
+from util.utils import count_params, AverageMeter, intersectionAndUnion, init_log, BoundaryLenienceCELoss, BoundaryLenienceDiceLoss, dice_loss
 from util.dist_helper import setup_distributed
 
 parser = argparse.ArgumentParser(description='UniMatch V2: Pushing the Limit of Semi-Supervised Semantic Segmentation')
@@ -320,8 +320,14 @@ def main():
                 window_size=bl_cfg.get('window_size', 7),
                 reduction='mean',
             ).cuda(local_rank)
+            dice_loss_fn = BoundaryLenienceDiceLoss(
+                ignore_index=cfg['criterion']['kwargs'].get('ignore_index', 255),
+                alpha=bl_cfg.get('alpha', 0.5),
+                window_size=bl_cfg.get('window_size', 7),
+            ).cuda(local_rank)
         else:
             criterion = nn.CrossEntropyLoss(**cfg['criterion']['kwargs']).cuda(local_rank)
+            dice_loss_fn = dice_loss
     else:
         raise NotImplementedError('%s criterion is not implemented' % cfg['criterion']['name'])
 
@@ -425,9 +431,11 @@ def main():
             img = img.cuda(local_rank, non_blocking=True)
             mask = mask.cuda(local_rank, non_blocking=True)
             pred = model(img)
-            loss_ce = criterion(pred, mask)
-            loss_dice = dice_loss(pred, mask)
-            loss = 0.5 * loss_ce + 0.5 * loss_dice
+            loss_ce_w = cfg['criterion'].get('loss_ce_weight', 0.5)
+            loss_dice_w = cfg['criterion'].get('loss_dice_weight', 0.5)
+            loss_ce = criterion(pred, mask) if loss_ce_w > 0 else torch.zeros(1, device=img.device)
+            loss_dice = dice_loss_fn(pred, mask) if loss_dice_w > 0 else torch.zeros(1, device=img.device)
+            loss = loss_ce_w * loss_ce + loss_dice_w * loss_dice
 
             optimizer.zero_grad()
             loss.backward()
