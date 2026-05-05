@@ -19,6 +19,12 @@ python ijmond_bbox_dataset.py dataset/ijmond_bbox/filtered_bbox_labels_1_aug_202
 
 ### Prepare SMOKE5K data for pretraining
 
+Download the SMOKE5K dataset from the following repository and put it under the `dataset/` folder.
+```sh
+cd dataset
+git clone https://github.com/MultiX-Amsterdam/smoke5k.git
+```
+
 Prepare SMOKE5K for training. This will create metadata txt files in `dataset/smoke5k/`.
 ```sh
 python create_smoke5k_metadata.py dataset/smoke5k/
