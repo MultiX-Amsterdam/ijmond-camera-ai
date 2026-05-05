@@ -19,7 +19,7 @@ import yaml
 from dataset.semi import SemiSmokeDataset
 from model.semseg.dpt import DPT
 from util.classes import CLASSES
-from util.utils import count_params, AverageMeter, intersectionAndUnion, init_log, BoundaryLenienceCELoss, BoundaryLenienceDiceLoss, dice_loss
+from util.utils import count_params, AverageMeter, intersectionAndUnion, init_log, BoundaryLenienceCELoss, BoundaryLenienceDiceLoss, dice_loss, eval_score
 from util.dist_helper import setup_distributed
 
 parser = argparse.ArgumentParser(description='UniMatch V2: Pushing the Limit of Semi-Supervised Semantic Segmentation')
@@ -373,6 +373,7 @@ def main():
     total_iters = len(trainloader) * cfg['epochs']
     best_epoch = -1
     best_eval = None
+    best_score = None
     epoch = -1
 
     if os.path.exists(os.path.join(args.save_path, 'latest.pth')):
@@ -382,6 +383,7 @@ def main():
         epoch = checkpoint['epoch']
         best_epoch = checkpoint['best_epoch']
         best_eval = checkpoint['best_eval']
+        best_score = checkpoint.get('best_score')
 
         if rank == 0:
             logger.info('************ Resumed from checkpoint at epoch %i\n' % epoch)
@@ -478,6 +480,10 @@ def main():
                     evaluation["mIoU"], evaluation["mF1"], evaluation["FAR"]
                 ))
 
+            logger.info(
+                '***** Evaluation ***** >>>> Score (H-mean gF1 & 1-FAR): {:.4f}'.format(
+                    eval_score(evaluation)
+                ))
             writer.add_scalar('eval/gIoU', evaluation["gIoU"], epoch)
             writer.add_scalar('eval/gF1', evaluation["gF1"], epoch)
             writer.add_scalar('eval/gPre', evaluation["gPre"], epoch)
@@ -486,10 +492,12 @@ def main():
             writer.add_scalar('eval/mIoU', evaluation["mIoU"], epoch)
             writer.add_scalar('eval/mF1', evaluation["mF1"], epoch)
             writer.add_scalar('eval/FAR', evaluation["FAR"], epoch)
+            writer.add_scalar('eval/score', eval_score(evaluation), epoch)
 
-            if best_eval is None or evaluation["gF1"] > best_eval["gF1"]:
+            if best_score is None or eval_score(evaluation) > best_score:
                 best_epoch = epoch
                 best_eval = {k: v for k, v in evaluation.items()}
+                best_score = eval_score(evaluation)
                 save_dict = {**best_eval, "checkpoint": {
                     "model": model.state_dict(),
                     "optimizer": optimizer.state_dict(),
@@ -503,6 +511,7 @@ def main():
                 'epoch': epoch,
                 'best_epoch': best_epoch,
                 'best_eval': best_eval,
+                'best_score': best_score,
             }, os.path.join(args.save_path, 'latest.pth'))
 
         dist.barrier()

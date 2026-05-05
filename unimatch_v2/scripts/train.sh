@@ -37,12 +37,12 @@ MODELS=(
     "m-zeroshot"
     "m-citizen"
     "m-citizen"
-    "m-expert-20"
-    "m-expert-20"
-    "m-mix-20"
-    "m-mix-20"
-    "m-mix-20-pseudo"
-    "m-mix-20-pseudo"
+    "m-expert"
+    "m-expert"
+    "m-mix-100"
+    "m-mix-100"
+    "m-mix-100-pseudo"
+    "m-mix-100-pseudo"
 )
 
 METHODS=(

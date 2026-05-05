@@ -66,6 +66,16 @@ def count_params(model):
     return param_num / 1e6
 
 
+def eval_score(evaluation):
+    """Harmonic mean of gF1 and (1 - FAR) used for model selection."""
+    gf1 = evaluation["gF1"]
+    inv_far = 1.0 - evaluation["FAR"]
+    denom = gf1 + inv_far
+    if denom < 1e-12:
+        return 0.0
+    return 2.0 * gf1 * inv_far / denom
+
+
 class AverageMeter(object):
     """Computes and stores the average and current value"""
 

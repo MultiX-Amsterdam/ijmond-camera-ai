@@ -10,4 +10,3 @@ pretrained_model: m-zeroshot
 citizen_data: ""
 citizen_img: ""
 citizen_correction: false
-citizen_mil_weight: 0

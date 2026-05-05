@@ -84,8 +84,21 @@ def main() -> None:
         shutil.rmtree(EXP_DIR)
 
     print("=== smoke5k ===")
-    write_lines("smoke5k_train", load("smoke5k/train/train.txt", "smoke5k/train/"))
+    smoke5k_train = load("smoke5k/train/train.txt", "smoke5k/train/")
+    write_lines("smoke5k_train", smoke5k_train)
     write_lines("smoke5k_test",   load("smoke5k/test/test.txt",   "smoke5k/test/"))
+
+    print("\n=== smokeseg ===")
+    smokeseg_train = load("smokeseg/train.txt", "smokeseg/")
+    write_lines("smokeseg_train",        smokeseg_train)
+    write_lines("smokeseg_val",          load("smokeseg/val.txt",          "smokeseg/"))
+    write_lines("smokeseg_test",         load("smokeseg/test.txt",         "smokeseg/"))
+    write_lines("smokeseg_test_large",   load("smokeseg/test_large.txt",   "smokeseg/"))
+    write_lines("smokeseg_test_medium",  load("smokeseg/test_medium.txt",  "smokeseg/"))
+    write_lines("smokeseg_test_small",   load("smokeseg/test_small.txt",   "smokeseg/"))
+
+    print("\n=== smoke5k_smokeseg_train (smoke5k + smokeseg) ===")
+    write_lines("smoke5k_smokeseg_train", smoke5k_train + smokeseg_train)
 
     print("\n=== citizen ===")
     citizen_with    = load("ijmond_pseudo_masks/train_with_mask.txt",    "ijmond_pseudo_masks/")

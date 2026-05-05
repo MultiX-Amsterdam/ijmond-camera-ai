@@ -15,11 +15,11 @@ from torch.utils.data import DataLoader, SubsetRandomSampler
 from torch.utils.tensorboard import SummaryWriter
 import yaml
 
-from dataset.boxsup import BoxSupDataset, boxsup_collate_fn, make_box_corrected_mask, mil_box_loss
+from dataset.boxsup import BoxSupDataset, boxsup_collate_fn, make_box_corrected_mask
 from dataset.semi import SemiSmokeDataset
 from model.semseg.dpt import DPT
 from supervised import evaluate_new
-from util.utils import count_params, init_log, AverageMeter, BoundaryLenienceCELoss, BoundaryLenienceDiceLoss, dice_loss
+from util.utils import count_params, init_log, AverageMeter, BoundaryLenienceCELoss, BoundaryLenienceDiceLoss, dice_loss, eval_score
 from util.dist_helper import setup_distributed
 
 parser = argparse.ArgumentParser(description='UniMatch V2: Pushing the Limit of Semi-Supervised Semantic Segmentation')
@@ -224,7 +224,6 @@ def main():
     citizen_data = training_cfg.get('citizen_data', '').strip()
     citizen_img = training_cfg.get('citizen_img', '').strip()
     citizen_correction = bool(training_cfg.get('citizen_correction', True))
-    citizen_mil_weight = float(training_cfg.get('citizen_mil_weight', 0.0))
     if citizen_data and citizen_img:
         citizen_json_path = os.path.join(cfg['data_root'], citizen_data)
         citizen_img_dir = os.path.join(cfg['data_root'], citizen_img)
@@ -252,8 +251,8 @@ def main():
         )
         if rank == 0:
             logger.info(
-                'Citizen dataset: %s  (%d total images, correction=%s, mil_weight=%.3f, batch_size=%d)\n' %
-                (citizen_data, len(trainset_citizen), citizen_correction, citizen_mil_weight, smoke_batch_size)
+                'Citizen dataset: %s  (%d total images, correction=%s, batch_size=%d)\n' %
+                (citizen_data, len(trainset_citizen), citizen_correction, smoke_batch_size)
             )
     else:
         trainloader_citizen = None
@@ -326,6 +325,7 @@ def main():
     total_iters = len(trainloader_u) * cfg['epochs']
     best_epoch = -1
     best_eval = None
+    best_score = None
     epoch = -1
 
     if os.path.exists(os.path.join(args.save_path, 'latest.pth')):
@@ -336,6 +336,7 @@ def main():
         epoch = checkpoint['epoch']
         best_epoch = checkpoint['best_epoch']
         best_eval = checkpoint['best_eval']
+        best_score = checkpoint.get('best_score')
 
         if rank == 0:
             logger.info('************ Resumed from checkpoint at epoch %i\n' % epoch)
@@ -377,7 +378,6 @@ def main():
         total_loss_dice = AverageMeter()
         total_loss_s = AverageMeter()
         total_loss_c = AverageMeter()
-        total_loss_mil = AverageMeter()
         total_mask_ratio = AverageMeter()
 
         trainloader_smoke.sampler.set_epoch(epoch)
@@ -483,21 +483,15 @@ def main():
                 loss_c_s = (loss_c_s1 + loss_c_s2) / 2.0
 
                 loss_u_s = (loss_u_s1 + loss_u_s2 + loss_c_s) / 3.0
-
-                if citizen_mil_weight > 0:
-                    loss_mil = mil_box_loss(pred_c_s1, bboxes_c)
-                else:
-                    loss_mil = torch.zeros(1).cuda(local_rank)
             else:
                 loss_c_s = torch.zeros(1).cuda(local_rank)
-                loss_mil = torch.zeros(1).cuda(local_rank)
 
             loss_ce_w = cfg['criterion'].get('loss_ce_weight', 0.25)
             loss_dice_w = cfg['criterion'].get('loss_dice_weight', 0.25)
             loss_u_w = cfg['criterion'].get('loss_u_weight', 0.5)
             loss_x_ce = criterion_l(pred_x, mask_x) if loss_ce_w > 0 else torch.zeros(1).cuda(local_rank)
             loss_x_dice = dice_loss_fn(pred_x, mask_x) if loss_dice_w > 0 else torch.zeros(1).cuda(local_rank)
-            loss = loss_ce_w * loss_x_ce + loss_dice_w * loss_x_dice + loss_u_w * loss_u_s + citizen_mil_weight * loss_mil
+            loss = loss_ce_w * loss_x_ce + loss_dice_w * loss_x_dice + loss_u_w * loss_u_s
 
             optimizer.zero_grad()
             loss.backward()
@@ -508,7 +502,6 @@ def main():
             total_loss_dice.update(loss_x_dice.item())
             total_loss_s.update(loss_u_s.item())
             total_loss_c.update(loss_c_s.item())
-            total_loss_mil.update(loss_mil.item())
             mask_ratio = ((conf_u_w >= cfg['conf_thresh']) & (ignore_mask != 255)).sum().item() / max(
                     (ignore_mask != 255).sum().item(), 1)
             total_mask_ratio.update(mask_ratio)
@@ -534,16 +527,15 @@ def main():
                 writer.add_scalar('train/loss_dice', loss_x_dice.item(), iters)
                 writer.add_scalar('train/loss_s', loss_u_s.item(), iters)
                 writer.add_scalar('train/loss_c', loss_c_s.item(), iters)
-                writer.add_scalar('train/loss_mil', loss_mil.item(), iters)
                 writer.add_scalar('train/mask_ratio', mask_ratio, iters)
 
             if (i % max(len(trainloader_u) // 8, 1) == 0) and (rank == 0):
                 logger.info(
                     'Iters: {:}, LR: {:.7f}, Total loss: {:.3f}, Loss x: {:.3f}, Loss dice: {:.3f}, '
-                    'Loss s: {:.3f}, Loss c: {:.3f}, Loss mil: {:.3f}, Mask ratio: {:.3f}'.format(
+                    'Loss s: {:.3f}, Loss c: {:.3f}, Mask ratio: {:.3f}'.format(
                         i, optimizer.param_groups[0]['lr'], total_loss.avg, total_loss_x.avg,
                         total_loss_dice.avg, total_loss_s.avg, total_loss_c.avg,
-                        total_loss_mil.avg, total_mask_ratio.avg
+                        total_mask_ratio.avg
                     )
                 )
 
@@ -565,6 +557,10 @@ def main():
                     evaluation["mIoU"], evaluation["mF1"], evaluation["FAR"]
                 ))
 
+            logger.info(
+                '***** Evaluation ***** >>>> Score (H-mean gF1 & 1-FAR): {:.4f}'.format(
+                    eval_score(evaluation)
+                ))
             writer.add_scalar('eval/gIoU', evaluation["gIoU"], epoch)
             writer.add_scalar('eval/gF1', evaluation["gF1"], epoch)
             writer.add_scalar('eval/gPre', evaluation["gPre"], epoch)
@@ -573,10 +569,12 @@ def main():
             writer.add_scalar('eval/mIoU', evaluation["mIoU"], epoch)
             writer.add_scalar('eval/mF1', evaluation["mF1"], epoch)
             writer.add_scalar('eval/FAR', evaluation["FAR"], epoch)
+            writer.add_scalar('eval/score', eval_score(evaluation), epoch)
 
-            if best_eval is None or evaluation["gF1"] > best_eval["gF1"]:
+            if best_score is None or eval_score(evaluation) > best_score:
                 best_epoch = epoch
                 best_eval = {k: v for k, v in evaluation.items()}
+                best_score = eval_score(evaluation)
                 save_dict = {**best_eval, "checkpoint": {
                     "model": model.state_dict(),
                     "optimizer": optimizer.state_dict(),
@@ -591,6 +589,7 @@ def main():
                 'epoch': epoch,
                 'best_epoch': best_epoch,
                 'best_eval': best_eval,
+                'best_score': best_score,
             }, os.path.join(args.save_path, 'latest.pth'))
 
         dist.barrier()
