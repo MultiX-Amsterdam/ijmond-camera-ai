@@ -31,7 +31,6 @@ MASTER_ADDR=${3:-"localhost"}
 
 exp='dinov3_small_testrun'
 unlabeled_sample_size=1500
-unlabeled_sample_seed=23838742
 
 MODELS=(
     "m-zeroshot"
@@ -94,7 +93,6 @@ for i in $(seq 0 $((${#MODELS[@]} - 1))); do
             --save-path "$save_path" \
             --port "$PORT" \
             --unlabeled-sample-size "$unlabeled_sample_size" \
-            --unlabeled-sample-seed "$unlabeled_sample_seed" \
             2>&1 | tee "${save_path}/out_${RUN_TS}.log"
     else
         python "${method}.py" \
@@ -102,7 +100,6 @@ for i in $(seq 0 $((${#MODELS[@]} - 1))); do
             --save-path "$save_path" \
             --port "$PORT" \
             --unlabeled-sample-size "$unlabeled_sample_size" \
-            --unlabeled-sample-seed "$unlabeled_sample_seed" \
             2>&1 | tee "${save_path}/out_${RUN_TS}.log"
     fi
 

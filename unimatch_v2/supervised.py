@@ -28,7 +28,6 @@ parser.add_argument('--save-path', type=str, required=True)
 parser.add_argument('--local_rank', '--local-rank', default=0, type=int)
 parser.add_argument('--port', default=None, type=int)
 parser.add_argument('--unlabeled-sample-size', type=int, required=False)
-parser.add_argument('--unlabeled-sample-seed', type=int, required=False)
 
 """
 def evaluate(model, loader, cfg, multiplier=None):

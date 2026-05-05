@@ -28,7 +28,6 @@ parser.add_argument('--save-path', type=str, required=True)
 parser.add_argument('--local_rank', '--local-rank', default=0, type=int)
 parser.add_argument('--port', default=None, type=int)
 parser.add_argument('--unlabeled-sample-size', type=int, required=False)
-parser.add_argument('--unlabeled-sample-seed', type=int, required=False)
 
 
 def main():
@@ -196,8 +195,7 @@ def main():
             "Randomly sampling %s of %s unlabeled images each epoch" % (current_nsample, len(trainset_u))
         )
 
-        seed = args.unlabeled_sample_seed or 1
-        rand_gen = torch.Generator().manual_seed(seed)
+        rand_gen = torch.Generator()
 
         trainsampler_u = torch.utils.data.RandomSampler(
             trainset_u,
@@ -248,7 +246,7 @@ def main():
                 trainset_citizen,
                 replacement=True,
                 num_samples=citizen_num_samples,
-                generator=torch.Generator().manual_seed(4),
+                generator=torch.Generator(),
             ),
         )
         if rank == 0:
@@ -295,7 +293,7 @@ def main():
     trainsampler_clear = torch.utils.data.RandomSampler(
         trainset_clear,
         replacement=True,
-        generator=torch.Generator().manual_seed(1)
+        generator=torch.Generator()
     )
 
     trainloader_clear = DataLoader(
