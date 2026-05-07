@@ -27,7 +27,37 @@ parser.add_argument('--training-config', type=str, required=True)
 parser.add_argument('--save-path', type=str, required=True)
 parser.add_argument('--local_rank', '--local-rank', default=0, type=int)
 parser.add_argument('--port', default=None, type=int)
-parser.add_argument('--unlabeled-sample-size', type=int, required=False)
+
+
+class DistributedFixedSizeSampler(torch.utils.data.Sampler):
+    """DDP-aware sampler that draws a fixed total number of samples per epoch.
+
+    Each rank receives num_samples // world_size unique indices. Indices are
+    re-randomized every epoch via set_epoch, ensuring different samples are
+    seen each epoch across the full dataset.
+    """
+
+    def __init__(self, dataset, num_samples, rank, world_size, seed=0):
+        self.dataset_len = len(dataset)
+        self.num_samples_total = num_samples
+        self.rank = rank
+        self.world_size = world_size
+        self.per_rank = num_samples // world_size
+        self.seed = seed
+        self.epoch = 0
+
+    def set_epoch(self, epoch):
+        self.epoch = epoch
+
+    def __iter__(self):
+        g = torch.Generator()
+        g.manual_seed(self.seed + self.epoch)
+        indices = torch.randperm(self.dataset_len, generator=g)[:self.num_samples_total]
+        local_indices = indices[self.rank::self.world_size]
+        return iter(local_indices.tolist())
+
+    def __len__(self):
+        return self.per_rank
 
 
 def main():
@@ -126,7 +156,7 @@ def main():
     model_ema.eval()
 
     if pretrained_model_name := training_cfg.get("pretrained_model", "").strip():
-        pretrained_best_pth = os.path.join("exp", pretrained_model_name, "best.pth")
+        pretrained_best_pth = os.path.join(os.path.dirname(args.save_path), pretrained_model_name, "best.pth")
 
         if os.path.exists(pretrained_best_pth):
             checkpoint = torch.load(
@@ -187,25 +217,19 @@ def main():
 
     current_nsample = len(trainset_u)
 
-    if args.unlabeled_sample_size is not None and args.unlabeled_sample_size > 0 and args.unlabeled_sample_size < current_nsample:
-        current_nsample = args.unlabeled_sample_size
+    cfg_nsample = cfg.get("unlabeled_sample_size", 1500)
+    if 0 < cfg_nsample < current_nsample:
+        current_nsample = cfg_nsample
 
-    if current_nsample < len(trainset_u):
+    trainsampler_u = DistributedFixedSizeSampler(
+        trainset_u, current_nsample, rank, world_size
+    )
+
+    if rank == 0:
         logger.info(
-            "Randomly sampling %s of %s unlabeled images each epoch" % (current_nsample, len(trainset_u))
+            "Unlabeled dataset: %s total images, sampling %s per epoch\n" %
+            (len(trainset_u), current_nsample)
         )
-
-        rand_gen = torch.Generator()
-
-        trainsampler_u = torch.utils.data.RandomSampler(
-            trainset_u,
-            replacement=True,
-            num_samples=current_nsample,
-            generator=rand_gen
-        )
-    else:
-        logger.info("Sampling %s unlabeled images each epoch" % current_nsample)
-        trainsampler_u = torch.utils.data.distributed.DistributedSampler(trainset_u)
 
     smoke_batch_size = cfg['batch_size'];
     clear_batch_size = max(smoke_batch_size // 10, 1)
@@ -234,7 +258,6 @@ def main():
             base_size=cfg.get('base_size'),
             use_dcp=cfg.get('use_dcp', False),
         )
-        citizen_num_samples = len(trainloader_u) * smoke_batch_size
         trainloader_citizen = DataLoader(
             trainset_citizen,
             batch_size=smoke_batch_size,
@@ -242,12 +265,7 @@ def main():
             num_workers=4,
             drop_last=True,
             collate_fn=boxsup_collate_fn,
-            sampler=torch.utils.data.RandomSampler(
-                trainset_citizen,
-                replacement=True,
-                num_samples=citizen_num_samples,
-                generator=torch.Generator(),
-            ),
+            sampler=torch.utils.data.distributed.DistributedSampler(trainset_citizen),
         )
         if rank == 0:
             logger.info(
@@ -290,11 +308,7 @@ def main():
         use_dcp=cfg.get('use_dcp', False),
     )
 
-    trainsampler_clear = torch.utils.data.RandomSampler(
-        trainset_clear,
-        replacement=True,
-        generator=torch.Generator()
-    )
+    trainsampler_clear = torch.utils.data.distributed.DistributedSampler(trainset_clear)
 
     trainloader_clear = DataLoader(
         trainset_clear,
@@ -381,12 +395,14 @@ def main():
         total_mask_ratio = AverageMeter()
 
         trainloader_smoke.sampler.set_epoch(epoch)
-        if isinstance(trainsampler_u, torch.utils.data.distributed.DistributedSampler):
-            trainsampler_u.set_epoch(epoch)
+        trainsampler_u.set_epoch(epoch)
+        trainloader_clear.sampler.set_epoch(epoch)
+        if trainloader_citizen is not None:
+            trainloader_citizen.sampler.set_epoch(epoch)
 
         combined_loader = (
             tuple(torch.cat(pair) for pair in zip(*batch))
-            for batch in zip(trainloader_smoke, cycle(iter(trainloader_clear)))
+            for batch in zip(cycle(iter(trainloader_smoke)), cycle(iter(trainloader_clear)))
         )
 
         loader = zip(combined_loader, trainloader_u)

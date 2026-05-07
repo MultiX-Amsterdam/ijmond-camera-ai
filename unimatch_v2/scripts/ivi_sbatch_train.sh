@@ -45,7 +45,6 @@
 
 # ---- Training parameters (modify as needed) ---------------------------------
 exp="dinov3_base_sbatch_testrun"
-unlabeled_sample_size=1500
 
 # Number of GPUs per node must match --gres=gpu:N in the SBATCH header above
 NUM_GPUS=2
@@ -170,14 +169,12 @@ for i in "${!MODELS[@]}"; do
             --training-config "$training_config" \
             --save-path "$save_path" \
             --port "$PORT" \
-            --unlabeled-sample-size "$unlabeled_sample_size" \
             2>&1 | tee "${save_path}/out_${RUN_TS}.log"
     else
         python "${method}.py" \
             --training-config "$training_config" \
             --save-path "$save_path" \
             --port "$PORT" \
-            --unlabeled-sample-size "$unlabeled_sample_size" \
             2>&1 | tee "${save_path}/out_${RUN_TS}.log"
     fi
 

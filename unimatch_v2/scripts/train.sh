@@ -30,7 +30,6 @@ PORT=${2:-9271}
 MASTER_ADDR=${3:-"localhost"}
 
 exp='dinov3_small_testrun'
-unlabeled_sample_size=1500
 
 MODELS=(
     "m-zeroshot"
@@ -92,14 +91,12 @@ for i in $(seq 0 $((${#MODELS[@]} - 1))); do
             --training-config "$training_config" \
             --save-path "$save_path" \
             --port "$PORT" \
-            --unlabeled-sample-size "$unlabeled_sample_size" \
             2>&1 | tee "${save_path}/out_${RUN_TS}.log"
     else
         python "${method}.py" \
             --training-config "$training_config" \
             --save-path "$save_path" \
             --port "$PORT" \
-            --unlabeled-sample-size "$unlabeled_sample_size" \
             2>&1 | tee "${save_path}/out_${RUN_TS}.log"
     fi
 

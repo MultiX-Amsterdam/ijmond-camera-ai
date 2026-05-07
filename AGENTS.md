@@ -14,6 +14,7 @@ Your goal is to write code that accelerates research progress while maintaining 
 - **Naming Conventions:** Use `lower_snake_case` for all variables, functions, Python files (`.py`), and shell scripts (`.sh`). Never use spaces in file names.
 - **Strings:** Always use double quotes (`"like this"`), never single quotes.
 - **Docstrings:** Use the `numpydoc` style guide for all functions.
+- **Document the Code**: Always write (or update) docstrings at the begining of the script to explain what the script is doing (and also provide example usages if it can be executed directly via terminal). Also, for each function, write (or update) docstrings to explain input and output parameters.
 
 ## Testing Philosophy
 - **Script-Level Testing:** Do not write unit tests for individual functions. Instead, write test cases for the entire script (e.g., passing input parameters via terminal commands).
