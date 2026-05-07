@@ -6,7 +6,7 @@ crop_size: 352 # must be divisible by 16 (DINOv3 patch size)
 base_size: 704 # long side rescaled to this before scale jitter (2x crop_size)
 
 # arguments for training
-epochs: 50 # use 50 epochs for full training
+epochs: 2 # use 50 epochs for full training
 unlabeled_sample_size: 1500  # number of unlabeled images sampled per epoch
 batch_size: 20 # per GPU (decrease this if using multiple GPUs to avoid OOM)
 lr: 0.00001 # use 0.000005 for single GPU, 0.00001 for two GPUs, 0.000015 for three, and 0.00002 for four

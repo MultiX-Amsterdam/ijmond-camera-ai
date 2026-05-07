@@ -19,7 +19,8 @@ import yaml
 from dataset.semi import SemiSmokeDataset
 from model.semseg.dpt import DPT
 from util.classes import CLASSES
-from util.utils import count_params, AverageMeter, intersectionAndUnion, init_log, BoundaryLenienceCELoss, BoundaryLenienceDiceLoss, dice_loss, eval_score
+from util.utils import count_params, AverageMeter, intersectionAndUnion, init_log, BoundaryLenienceCELoss, BoundaryLenienceDiceLoss, dice_loss, eval_score, update_loss_history
+from plot_training_curves import plot_loss_curve
 from util.dist_helper import setup_distributed
 
 parser = argparse.ArgumentParser(description='UniMatch V2: Pushing the Limit of Semi-Supervised Semantic Segmentation')
@@ -107,7 +108,7 @@ def _compute_boundary_band(masks, kernel_size):
     return band > 0.5
 
 
-def evaluate_new(model, dataloader, multiplier=None, band_kernel_size=None):
+def evaluate_new(model, dataloader, multiplier=None, band_kernel_size=None, criterion=None):
     """
     Calculates smoke-class evaluation metrics.
 
@@ -132,6 +133,7 @@ def evaluate_new(model, dataloader, multiplier=None, band_kernel_size=None):
     total_fn = 0
     total_correct = 0
     total_pixels = 0
+    val_loss_meter = AverageMeter()
 
     per_image_ious = []
     per_image_f1s = []
@@ -161,6 +163,10 @@ def evaluate_new(model, dataloader, multiplier=None, band_kernel_size=None):
 
             if multiplier is not None:
                 outputs = F.interpolate(outputs, (ori_h, ori_w), mode='bilinear', align_corners=True)
+
+            if criterion is not None:
+                val_loss = criterion(outputs, masks)
+                val_loss_meter.update(val_loss.item(), images.shape[0])
 
             preds = outputs.argmax(dim=1)
 
@@ -210,7 +216,7 @@ def evaluate_new(model, dataloader, multiplier=None, band_kernel_size=None):
     mf1 = np.mean(per_image_f1s) if per_image_f1s else 0.0
     far = num_false_alarm / max(num_negative, 1)
 
-    return {
+    result = {
         "gIoU": iou,
         "gF1": f1,
         "gPre": precision,
@@ -220,6 +226,9 @@ def evaluate_new(model, dataloader, multiplier=None, band_kernel_size=None):
         "mF1": mf1,
         "FAR": far,
     }
+    if criterion is not None:
+        result["val_loss"] = val_loss_meter.avg
+    return result
 
 
 def main():
@@ -238,7 +247,8 @@ def main():
     if rank == 0:
         all_args = {**cfg, **vars(args), 'ngpus': world_size}
 
-        logger.info('{}\n'.format(pprint.pformat(all_args)))
+        logger.info('Training config ({}):\n{}\n'.format(args.training_config, pprint.pformat(training_cfg)))
+        logger.info('Model config ({}):\n{}\n'.format(training_cfg['configuration'], pprint.pformat(all_args)))
 
         writer = SummaryWriter(args.save_path)
 
@@ -462,8 +472,13 @@ def main():
                     i, optimizer.param_groups[0]['lr'], total_loss.avg, total_loss_ce.avg, total_loss_dice.avg))
 
         if rank == 0:
-            evaluation = evaluate_new(model, valloader, multiplier=model.module.patch_size)
+            logger.info('***** Epoch {:} ***** >>>> Train Loss: {:.4f}'.format(epoch, total_loss.avg))
 
+            evaluation = evaluate_new(model, valloader, multiplier=model.module.patch_size, criterion=criterion)
+
+            logger.info(
+                '***** Evaluation ***** >>>> Val Loss: {:.4f}'.format(evaluation["val_loss"])
+            )
             logger.info(
                 '***** Evaluation ***** >>>> gIoU: {:.4f}, gF1: {:.4f}, gAccu: {:.4f}'.format(
                     evaluation["gIoU"], evaluation["gF1"], evaluation["gAccu"]
@@ -483,6 +498,8 @@ def main():
                 '***** Evaluation ***** >>>> Score (H-mean gF1 & 1-FAR): {:.4f}'.format(
                     eval_score(evaluation)
                 ))
+            writer.add_scalar('train/loss_epoch', total_loss.avg, epoch)
+            writer.add_scalar('eval/val_loss', evaluation["val_loss"], epoch)
             writer.add_scalar('eval/gIoU', evaluation["gIoU"], epoch)
             writer.add_scalar('eval/gF1', evaluation["gF1"], epoch)
             writer.add_scalar('eval/gPre', evaluation["gPre"], epoch)
@@ -513,7 +530,12 @@ def main():
                 'best_score': best_score,
             }, os.path.join(args.save_path, 'latest.pth'))
 
+            update_loss_history(args.save_path, epoch, total_loss.avg, evaluation["val_loss"])
+
         dist.barrier()
+
+    if rank == 0:
+        plot_loss_curve(args.save_path)
 
 
 if __name__ == '__main__':

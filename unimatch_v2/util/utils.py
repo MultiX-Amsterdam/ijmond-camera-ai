@@ -1,3 +1,4 @@
+import json
 import numpy as np
 import logging
 import os
@@ -408,3 +409,37 @@ def color_map(dataset='pascal'):
         cmap[149] = np.array([92, 0, 255])
 
     return cmap
+
+
+def update_loss_history(save_path, epoch, train_loss, val_loss):
+    """Append one epoch's losses to loss_history.json in save_path.
+
+    Loads the existing JSON history (or starts a fresh list), removes any
+    pre-existing entry for this epoch (handles resume-and-overwrite), appends
+    the new entry, sorts by epoch, and writes back.  Safe to call on every
+    epoch so that interrupting and resuming training preserves the full history.
+
+    Parameters
+    ----------
+    save_path : str
+        Directory where the model checkpoints live.
+    epoch : int
+        Zero-based epoch index.
+    train_loss : float
+        Average training loss for this epoch.
+    val_loss : float
+        Validation loss for this epoch.
+    """
+    history_path = os.path.join(save_path, "loss_history.json")
+    if os.path.exists(history_path):
+        with open(history_path, "r") as f:
+            history = json.load(f)
+    else:
+        history = []
+
+    history = [e for e in history if e["epoch"] != epoch]
+    history.append({"epoch": epoch, "train_loss": train_loss, "val_loss": val_loss})
+    history.sort(key=lambda e: e["epoch"])
+
+    with open(history_path, "w") as f:
+        json.dump(history, f, indent=2)

@@ -1,6 +1,7 @@
 # arguments for setting up and training a model
 configuration: configs/smoke5k_dinov3.yaml
 smoke_dataset: experiment/smoke5k_smokeseg_train.txt
+unlabeled_dataset: experiment/unlabeled.txt
 validation_dataset: experiment/expert_standard_val.txt
 test_dataset: experiment/expert_standard_test.txt
 test_model: best.pth

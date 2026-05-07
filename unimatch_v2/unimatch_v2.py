@@ -19,7 +19,8 @@ from dataset.boxsup import BoxSupDataset, boxsup_collate_fn, make_box_corrected_
 from dataset.semi import SemiSmokeDataset
 from model.semseg.dpt import DPT
 from supervised import evaluate_new
-from util.utils import count_params, init_log, AverageMeter, BoundaryLenienceCELoss, BoundaryLenienceDiceLoss, dice_loss, eval_score
+from util.utils import count_params, init_log, AverageMeter, BoundaryLenienceCELoss, BoundaryLenienceDiceLoss, dice_loss, eval_score, update_loss_history
+from plot_training_curves import plot_loss_curve
 from util.dist_helper import setup_distributed
 
 parser = argparse.ArgumentParser(description='UniMatch V2: Pushing the Limit of Semi-Supervised Semantic Segmentation')
@@ -78,7 +79,8 @@ def main():
     if rank == 0:
         all_args = {**cfg, **vars(args), 'ngpus': world_size}
 
-        logger.info('{}\n'.format(pprint.pformat(all_args)))
+        logger.info('Training config ({}):\n{}\n'.format(args.training_config, pprint.pformat(training_cfg)))
+        logger.info('Model config ({}):\n{}\n'.format(training_cfg['configuration'], pprint.pformat(all_args)))
 
         writer = SummaryWriter(args.save_path)
 
@@ -215,6 +217,33 @@ def main():
         use_dcp=cfg.get('use_dcp', False),
     )
 
+    # --- Citizen consistency loader ---
+    citizen_data = training_cfg.get('citizen_data', '').strip()
+    citizen_img = training_cfg.get('citizen_img', '').strip()
+    citizen_correction = bool(training_cfg.get('citizen_correction', True))
+    citizen_is_boxsup = False
+    if citizen_img and citizen_data:
+        # BoxSupDataset: citizen_data is the bbox JSON, citizen_img is the image directory.
+        # citizen_correction=True  → apply box correction to teacher pseudo-labels.
+        # citizen_correction=False → use EMA pseudo-labels as-is (treat as unlabeled).
+        citizen_json_path = os.path.join(cfg['data_root'], citizen_data)
+        citizen_img_dir = os.path.join(cfg['data_root'], citizen_img)
+        trainset_citizen = BoxSupDataset(
+            citizen_json_path,
+            citizen_img_dir,
+            crop_size=cfg['crop_size'],
+            base_size=cfg.get('base_size'),
+            use_dcp=cfg.get('use_dcp', False),
+        )
+        citizen_is_boxsup = True
+        if rank == 0:
+            logger.info(
+                'Citizen dataset: %s  (%d total images, correction=%s)\n' %
+                (citizen_data, len(trainset_citizen), citizen_correction)
+            )
+    else:
+        pass  # no citizen data
+
     current_nsample = len(trainset_u)
 
     cfg_nsample = cfg.get("unlabeled_sample_size", 1500)
@@ -231,9 +260,10 @@ def main():
             (len(trainset_u), current_nsample)
         )
 
-    smoke_batch_size = cfg['batch_size'];
+    smoke_batch_size = cfg['batch_size']
     clear_batch_size = max(smoke_batch_size // 10, 1)
-    batch_size = smoke_batch_size + clear_batch_size
+    has_clear_dataset = bool(training_cfg.get('clear_dataset'))
+    batch_size = smoke_batch_size + (clear_batch_size if has_clear_dataset else 0)
 
     trainloader_u = DataLoader(
         trainset_u,
@@ -244,20 +274,7 @@ def main():
         sampler=trainsampler_u
     )
 
-    # --- Citizen consistency loader ---
-    citizen_data = training_cfg.get('citizen_data', '').strip()
-    citizen_img = training_cfg.get('citizen_img', '').strip()
-    citizen_correction = bool(training_cfg.get('citizen_correction', True))
-    if citizen_data and citizen_img:
-        citizen_json_path = os.path.join(cfg['data_root'], citizen_data)
-        citizen_img_dir = os.path.join(cfg['data_root'], citizen_img)
-        trainset_citizen = BoxSupDataset(
-            citizen_json_path,
-            citizen_img_dir,
-            crop_size=cfg['crop_size'],
-            base_size=cfg.get('base_size'),
-            use_dcp=cfg.get('use_dcp', False),
-        )
+    if citizen_is_boxsup:
         trainloader_citizen = DataLoader(
             trainset_citizen,
             batch_size=smoke_batch_size,
@@ -267,11 +284,6 @@ def main():
             collate_fn=boxsup_collate_fn,
             sampler=torch.utils.data.distributed.DistributedSampler(trainset_citizen),
         )
-        if rank == 0:
-            logger.info(
-                'Citizen dataset: %s  (%d total images, correction=%s, batch_size=%d)\n' %
-                (citizen_data, len(trainset_citizen), citizen_correction, smoke_batch_size)
-            )
     else:
         trainloader_citizen = None
 
@@ -297,27 +309,28 @@ def main():
         sampler=trainsampler_smoke
     )
 
-    trainset_clear = SemiSmokeDataset(
-        current_dataset,
-        cfg['data_root'],
-        'train_l',
-        cfg['crop_size'],
-        base_size=cfg.get('base_size'),
-        id_path=training_cfg['clear_dataset'],
-        nsample=current_nsample,
-        use_dcp=cfg.get('use_dcp', False),
-    )
-
-    trainsampler_clear = torch.utils.data.distributed.DistributedSampler(trainset_clear)
-
-    trainloader_clear = DataLoader(
-        trainset_clear,
-        batch_size=clear_batch_size,
-        pin_memory=True,
-        num_workers=4,
-        drop_last=True,
-        sampler=trainsampler_clear
-    )
+    if has_clear_dataset:
+        trainset_clear = SemiSmokeDataset(
+            current_dataset,
+            cfg['data_root'],
+            'train_l',
+            cfg['crop_size'],
+            base_size=cfg.get('base_size'),
+            id_path=training_cfg['clear_dataset'],
+            nsample=current_nsample,
+            use_dcp=cfg.get('use_dcp', False),
+        )
+        trainsampler_clear = torch.utils.data.distributed.DistributedSampler(trainset_clear)
+        trainloader_clear = DataLoader(
+            trainset_clear,
+            batch_size=clear_batch_size,
+            pin_memory=True,
+            num_workers=4,
+            drop_last=True,
+            sampler=trainsampler_clear
+        )
+    else:
+        trainloader_clear = None
 
     valset = SemiSmokeDataset(
         cfg['dataset'],
@@ -396,14 +409,18 @@ def main():
 
         trainloader_smoke.sampler.set_epoch(epoch)
         trainsampler_u.set_epoch(epoch)
-        trainloader_clear.sampler.set_epoch(epoch)
+        if trainloader_clear is not None:
+            trainloader_clear.sampler.set_epoch(epoch)
         if trainloader_citizen is not None:
             trainloader_citizen.sampler.set_epoch(epoch)
 
-        combined_loader = (
-            tuple(torch.cat(pair) for pair in zip(*batch))
-            for batch in zip(cycle(iter(trainloader_smoke)), cycle(iter(trainloader_clear)))
-        )
+        if trainloader_clear is not None:
+            combined_loader = (
+                tuple(torch.cat(pair) for pair in zip(*batch))
+                for batch in zip(cycle(iter(trainloader_smoke)), cycle(iter(trainloader_clear)))
+            )
+        else:
+            combined_loader = iter(trainloader_smoke)
 
         loader = zip(combined_loader, trainloader_u)
 
@@ -547,8 +564,8 @@ def main():
 
             if (i % max(len(trainloader_u) // 8, 1) == 0) and (rank == 0):
                 logger.info(
-                    'Iters: {:}, LR: {:.7f}, Total loss: {:.3f}, Loss x: {:.3f}, Loss dice: {:.3f}, '
-                    'Loss s: {:.3f}, Loss c: {:.3f}, Mask ratio: {:.3f}'.format(
+                    'Iters: {:}, LR: {:.7f}, Total loss: {:.3f}, Loss CE: {:.3f}, Loss dice: {:.3f}, '
+                    'Loss u: {:.3f}, Loss c: {:.3f}, Mask ratio: {:.3f}'.format(
                         i, optimizer.param_groups[0]['lr'], total_loss.avg, total_loss_x.avg,
                         total_loss_dice.avg, total_loss_s.avg, total_loss_c.avg,
                         total_mask_ratio.avg
@@ -556,8 +573,13 @@ def main():
                 )
 
         if rank == 0:
-            evaluation = evaluate_new(model, valloader, multiplier=model.module.patch_size)
+            logger.info('***** Epoch {:} ***** >>>> Train Loss: {:.4f}'.format(epoch, total_loss.avg))
 
+            evaluation = evaluate_new(model, valloader, multiplier=model.module.patch_size, criterion=criterion_l)
+
+            logger.info(
+                '***** Evaluation ***** >>>> Val Loss: {:.4f}'.format(evaluation["val_loss"])
+            )
             logger.info(
                 '***** Evaluation ***** >>>> gIoU: {:.4f}, gF1: {:.4f}, gAccu: {:.4f}'.format(
                     evaluation["gIoU"], evaluation["gF1"], evaluation["gAccu"]
@@ -577,6 +599,8 @@ def main():
                 '***** Evaluation ***** >>>> Score (H-mean gF1 & 1-FAR): {:.4f}'.format(
                     eval_score(evaluation)
                 ))
+            writer.add_scalar('train/loss_epoch', total_loss.avg, epoch)
+            writer.add_scalar('eval/val_loss', evaluation["val_loss"], epoch)
             writer.add_scalar('eval/gIoU', evaluation["gIoU"], epoch)
             writer.add_scalar('eval/gF1', evaluation["gF1"], epoch)
             writer.add_scalar('eval/gPre', evaluation["gPre"], epoch)
@@ -608,7 +632,12 @@ def main():
                 'best_score': best_score,
             }, os.path.join(args.save_path, 'latest.pth'))
 
+            update_loss_history(args.save_path, epoch, total_loss.avg, evaluation["val_loss"])
+
         dist.barrier()
+
+    if rank == 0:
+        plot_loss_curve(args.save_path)
 
 
 if __name__ == '__main__':

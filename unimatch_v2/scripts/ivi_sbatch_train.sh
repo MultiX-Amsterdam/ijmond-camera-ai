@@ -88,7 +88,7 @@ MODELS=(
 )
 
 METHODS=(
-    "supervised"
+    "unimatch_v2"
     "test_model"
     "unimatch_v2"
     "test_model"
