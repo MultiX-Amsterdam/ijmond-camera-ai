@@ -19,7 +19,7 @@ import yaml
 from dataset.semi import SemiSmokeDataset
 from model.semseg.dpt import DPT
 from util.classes import CLASSES
-from util.utils import count_params, AverageMeter, intersectionAndUnion, init_log, BoundaryLenienceCELoss, BoundaryLenienceDiceLoss, dice_loss, eval_score, update_loss_history
+from util.utils import count_params, AverageMeter, intersectionAndUnion, init_log, BoundaryLenienceCELoss, BoundaryLenienceDiceLoss, dice_loss, eval_score, update_loss_history, compute_lr
 from plot_training_curves import plot_loss_curve
 from util.dist_helper import setup_distributed
 
@@ -320,7 +320,7 @@ def main():
     )
 
     bl_cfg = cfg.get('boundary_lenience', {})
-    if cfg['criterion']['name'] == 'CELoss':
+    if cfg['criterion']['name'] == 'CELossAndDiceLoss':
         if bl_cfg.get('enabled', False):
             criterion = BoundaryLenienceCELoss(
                 ignore_index=cfg['criterion']['kwargs'].get('ignore_index', 255),
@@ -380,6 +380,7 @@ def main():
 
     iters = 0
     total_iters = len(trainloader) * cfg['epochs']
+    warmup_iters = cfg.get('warmup_epochs', 5) * len(trainloader)
     best_epoch = -1
     best_eval = None
     best_score = None
@@ -457,7 +458,7 @@ def main():
 
             iters = epoch * len(trainloader) + i
 
-            lr = max(cfg['lr'] * (1 - iters / total_iters) ** 0.9, cfg['min_lr'])
+            lr = compute_lr(iters, total_iters, warmup_iters, cfg['lr'], cfg['min_lr'])
             optimizer.param_groups[0]["lr"] = lr
             optimizer.param_groups[1]["lr"] = lr * cfg['lr_multi']
 
@@ -468,11 +469,11 @@ def main():
                 writer.add_scalar('train/lr', lr, iters)
 
             if (i % max(len(trainloader) // 8, 1) == 0) and (rank == 0):
-                logger.info('Iters: {:}, LR: {:.7f}, Total loss: {:.3f}, Loss CE: {:.3f}, Loss dice: {:.3f}'.format(
+                logger.info('Iters: {:04d}, LR: {:.7f}, Total loss: {:.3f}, Loss CE: {:.3f}, Loss dice: {:.3f}'.format(
                     i, optimizer.param_groups[0]['lr'], total_loss.avg, total_loss_ce.avg, total_loss_dice.avg))
 
         if rank == 0:
-            logger.info('***** Epoch {:} ***** >>>> Train Loss: {:.4f}'.format(epoch, total_loss.avg))
+            logger.info('***** Epoch {:04d} ***** >>>> Train Loss: {:.4f}'.format(epoch, total_loss.avg))
 
             evaluation = evaluate_new(model, valloader, multiplier=model.module.patch_size, criterion=criterion)
 

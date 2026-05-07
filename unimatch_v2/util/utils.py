@@ -443,3 +443,40 @@ def update_loss_history(save_path, epoch, train_loss, val_loss):
 
     with open(history_path, "w") as f:
         json.dump(history, f, indent=2)
+
+
+def compute_lr(iters, total_iters, warmup_iters, max_lr, min_lr):
+    """Compute learning rate with linear warmup then cosine annealing.
+
+    Linear ramp from ``min_lr`` to ``max_lr`` over ``warmup_iters`` steps,
+    then cosine decay from ``max_lr`` back down to ``min_lr`` for the
+    remaining steps.
+
+    Using ``min_lr`` as the warmup starting point (rather than 0) is
+    recommended for AdamW: a cold start at exactly 0 stalls Adam's second
+    moment estimate; ``min_lr`` provides a safe non-zero floor while still
+    giving a meaningful ramp.
+
+    Parameters
+    ----------
+    iters : int
+        Current global training iteration (0-based).
+    total_iters : int
+        Total number of training iterations.
+    warmup_iters : int
+        Number of linear warmup iterations.
+    max_lr : float
+        Peak learning rate (reached at end of warmup).
+    min_lr : float
+        Floor learning rate (warmup start and cosine end).
+
+    Returns
+    -------
+    float
+        Learning rate for iteration ``iters``.
+    """
+    import math
+    if iters < warmup_iters:
+        return min_lr + (max_lr - min_lr) * iters / max(warmup_iters, 1)
+    progress = (iters - warmup_iters) / max(total_iters - warmup_iters, 1)
+    return min_lr + 0.5 * (max_lr - min_lr) * (1 + math.cos(math.pi * progress))

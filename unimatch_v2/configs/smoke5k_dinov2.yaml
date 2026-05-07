@@ -6,14 +6,16 @@ crop_size: 252 # must be divisible by 14 (DINOv2 patch size)
 base_size: 518 # long side rescaled to this before scale jitter (2x crop_size)
 
 # arguments for training
-epochs: 100 # use 100 epochs for full training
+epochs: 50 # use 50 epochs for full training
+unlabeled_sample_size: 10402  # number of unlabeled images sampled per epoch
 batch_size: 60 # per GPU (decrease this if using multiple GPUs to avoid OOM)
 lr: 0.00001 # use 0.000005 for single GPU, 0.00001 for two GPUs, 0.000015 for three, and 0.00002 for four
 lr_multi: 40.0
-min_lr: 0.000001  # backbone LR floor; head floor = min_lr * lr_multi
+min_lr: 0.0000001  # backbone LR floor; head floor = min_lr * lr_multi
+warmup_epochs: 5  # linear warmup; ~10% of a typical 50-epoch run
 weight_decay: 0.01
 criterion:
-  name: CELoss
+  name: CELossAndDiceLoss
   kwargs:
     ignore_index: 255
   loss_ce_weight: 0.5

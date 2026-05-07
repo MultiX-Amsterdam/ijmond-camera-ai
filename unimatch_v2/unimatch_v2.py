@@ -19,7 +19,7 @@ from dataset.boxsup import BoxSupDataset, boxsup_collate_fn, make_box_corrected_
 from dataset.semi import SemiSmokeDataset
 from model.semseg.dpt import DPT
 from supervised import evaluate_new
-from util.utils import count_params, init_log, AverageMeter, BoundaryLenienceCELoss, BoundaryLenienceDiceLoss, dice_loss, eval_score, update_loss_history
+from util.utils import count_params, init_log, AverageMeter, BoundaryLenienceCELoss, BoundaryLenienceDiceLoss, dice_loss, eval_score, update_loss_history, compute_lr
 from plot_training_curves import plot_loss_curve
 from util.dist_helper import setup_distributed
 
@@ -179,7 +179,7 @@ def main():
         param.requires_grad = False
 
     bl_cfg = cfg.get('boundary_lenience', {})
-    if cfg['criterion']['name'] == 'CELoss':
+    if cfg['criterion']['name'] == 'CELossAndDiceLoss':
         if bl_cfg.get('enabled', False):
             criterion_l = BoundaryLenienceCELoss(
                 ignore_index=cfg['criterion']['kwargs'].get('ignore_index', 255),
@@ -350,6 +350,7 @@ def main():
     )
 
     total_iters = len(trainloader_u) * cfg['epochs']
+    warmup_iters = cfg.get('warmup_epochs', 5) * len(trainloader_u)
     best_epoch = -1
     best_eval = None
     best_score = None
@@ -540,7 +541,7 @@ def main():
             total_mask_ratio.update(mask_ratio)
 
             iters = epoch * len(trainloader_u) + i
-            lr = max(cfg['lr'] * (1 - iters / total_iters) ** 0.9, cfg['min_lr'])
+            lr = compute_lr(iters, total_iters, warmup_iters, cfg['lr'], cfg['min_lr'])
             optimizer.param_groups[0]["lr"] = lr
             optimizer.param_groups[1]["lr"] = lr * cfg['lr_multi']
 
@@ -564,7 +565,7 @@ def main():
 
             if (i % max(len(trainloader_u) // 8, 1) == 0) and (rank == 0):
                 logger.info(
-                    'Iters: {:}, LR: {:.7f}, Total loss: {:.3f}, Loss CE: {:.3f}, Loss dice: {:.3f}, '
+                    'Iters: {:04d}, LR: {:.7f}, Total loss: {:.3f}, Loss CE: {:.3f}, Loss dice: {:.3f}, '
                     'Loss u: {:.3f}, Loss c: {:.3f}, Mask ratio: {:.3f}'.format(
                         i, optimizer.param_groups[0]['lr'], total_loss.avg, total_loss_x.avg,
                         total_loss_dice.avg, total_loss_s.avg, total_loss_c.avg,
@@ -573,7 +574,7 @@ def main():
                 )
 
         if rank == 0:
-            logger.info('***** Epoch {:} ***** >>>> Train Loss: {:.4f}'.format(epoch, total_loss.avg))
+            logger.info('***** Epoch {:04d} ***** >>>> Train Loss: {:.4f}'.format(epoch, total_loss.avg))
 
             evaluation = evaluate_new(model, valloader, multiplier=model.module.patch_size, criterion=criterion_l)
 

@@ -40,8 +40,8 @@ MODELS=(
     "m-expert"
     "m-mix-100"
     "m-mix-100"
-    "m-mix-100-pseudo"
-    "m-mix-100-pseudo"
+    "m-mix-100-box"
+    "m-mix-100-box"
 )
 
 METHODS=(
