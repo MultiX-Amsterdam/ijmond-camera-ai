@@ -7,6 +7,6 @@ validation_dataset: experiment/expert_standard_val.txt
 test_dataset: experiment/expert_standard_test.txt
 test_model: best.pth
 pretrained_model: m-zeroshot
-citizen_data: ijmond_bbox/filtered_bbox_labels_1_aug_2025.json
-citizen_img: ijmond_bbox/img
+citizen_data: ""
+citizen_img: ""
 citizen_correction: false
