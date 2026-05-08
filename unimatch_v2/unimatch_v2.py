@@ -182,7 +182,6 @@ def main():
 
     use_awl = bool(training_cfg.get('awl', False))
     awl_weight = float(training_cfg.get('awl_weight', 1.0))
-    awl_gamma = float(training_cfg.get('awl_gamma', 0.3))
     awl_citizen_batch_ratio = float(training_cfg.get('awl_citizen_batch_ratio', 0.25))
 
     if cfg['criterion']['name'] == 'CELossAndDiceLoss':
@@ -212,11 +211,11 @@ def main():
         raise NotImplementedError('%s criterion is not implemented' % cfg['criterion']['name'])
 
     if use_awl:
-        awl_criterion = AttentionWeightedLoss(gamma=awl_gamma).cuda(local_rank)
+        awl_criterion = AttentionWeightedLoss().cuda(local_rank)
         model.module.backbone.enable_cls_attn_hook()
         if rank == 0:
-            logger.info('AWL enabled: weight %.2f, gamma %.2f, citizen batch ratio %.2f\n' %
-                        (awl_weight, awl_gamma, awl_citizen_batch_ratio))
+            logger.info('AWL enabled: weight %.2f, citizen batch ratio %.2f\n' %
+                        (awl_weight, awl_citizen_batch_ratio))
     else:
         awl_criterion = None
 
@@ -543,14 +542,7 @@ def main():
                     H_c, W_c = img_c_w.shape[-2:]
                     alpha_c = model.module.backbone.get_last_cls_attn(H_c, W_c)
                     box_mask_c = make_fixed_box_mask(bboxes_c, H_c, W_c).float()
-                    # EMA teacher pseudo-mask intersected with box: used as η_c for
-                    # dynamic fill-rate regularisation (replaces GrabCut from Box2Seg)
-                    conf_c_smoke = pred_c_w.softmax(dim=1)[:, 1]
-                    pseudo_mask_c = (conf_c_smoke > cfg['conf_thresh']).float() * box_mask_c
-                    loss_awl = awl_criterion(
-                        pred_c_w_student, box_mask_c, alpha=alpha_c, pseudo_mask=pseudo_mask_c
-                    )
-                    total_loss_awl.update(loss_awl.item())
+                    loss_awl = awl_criterion(pred_c_w_student, box_mask_c, alpha=alpha_c)
                 else:
                     loss_awl = torch.zeros(1, device=img_x.device)
             else:
@@ -573,8 +565,7 @@ def main():
             total_loss_dice.update(loss_x_dice.item())
             total_loss_s.update(loss_u_s.item())
             total_loss_c.update(loss_c_s.item())
-            if awl_criterion is not None:
-                total_loss_awl.update(loss_awl.item())
+            total_loss_awl.update(loss_awl.item())
             mask_ratio = ((conf_u_w >= cfg['conf_thresh']) & (ignore_mask != 255)).sum().item() / max(
                     (ignore_mask != 255).sum().item(), 1)
             total_mask_ratio.update(mask_ratio)

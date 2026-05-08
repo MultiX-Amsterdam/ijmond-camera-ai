@@ -161,25 +161,14 @@ class AttentionWeightedLoss(nn.Module):
     the weighting is independent of the segmentation head.  If alpha is None,
     the model's own detached smoke softmax probability is used as a fallback.
 
-    Fill-rate regularisation prevents the attention from collapsing to zero.
-    When a pseudo_mask is provided (e.g. EMA teacher predictions intersected
-    with box_mask), the dynamic per-image fill rate eta_c is computed from it
-    and the target is gamma * eta_c, floored at min_absolute_fill=0.10 to
-    prevent collapse when the teacher is uninformative early in training.
-    Without a pseudo_mask the flat gamma is used as the floor.
-
-    Loss and regularisation are computed per-image then averaged over the batch
-    so that large boxes in one image cannot mask a fill-rate deficit in another.
-
-    Args:
-        gamma: Fill-rate coefficient in [0, 1].  Default 0.3.
+    Loss is computed per-image then averaged over the batch so that large boxes
+    in one image cannot dominate the gradient.
     """
 
-    def __init__(self, gamma=0.3):
+    def __init__(self):
         super().__init__()
-        self.gamma = gamma
 
-    def forward(self, logits, box_mask, alpha=None, pseudo_mask=None):
+    def forward(self, logits, box_mask, alpha=None):
         """Compute AWL.
 
         Parameters
@@ -191,12 +180,6 @@ class AttentionWeightedLoss(nn.Module):
         alpha : torch.Tensor or None
             Shape (B, H, W), float32, non-negative. Per-pixel attention weights.
             If None, the detached smoke softmax probability is used as a fallback.
-        pseudo_mask : torch.Tensor or None
-            Shape (B, H, W), float32, binary (0/1).  Confident foreground
-            predictions intersected with box_mask (e.g. from an EMA teacher
-            thresholded at conf_thresh).  When provided, the per-image dynamic
-            fill rate eta_c = pseudo_mask.sum(h,w) / box_area is used to set
-            the regularisation target gamma * eta_c instead of the flat gamma.
 
         Returns
         -------
@@ -224,20 +207,7 @@ class AttentionWeightedLoss(nn.Module):
         # Per-image background loss: standard CE outside boxes (definite background)
         loss_bg = -(bg * log_p_bg).sum(dim=(1, 2)) / bg_denom
 
-        # Per-image fill-rate regularisation: mean(alpha inside box) >= target
-        eta_prime = (alpha * fg).sum(dim=(1, 2)) / fg_denom  # (B,)
-
-        if pseudo_mask is not None:
-            # Dynamic target: gamma * eta_c, floored at 0.10 to handle early-
-            # training epochs when the teacher produces empty pseudo-masks.
-            eta_c = pseudo_mask.sum(dim=(1, 2)) / fg_denom   # (B,)
-            target_fill = (self.gamma * eta_c).clamp(min=0.10)
-        else:
-            target_fill = self.gamma  # flat scalar fallback
-
-        loss_reg = F.relu(target_fill - eta_prime)  # (B,)
-
-        return loss_fg.mean() + loss_bg.mean() + loss_reg.mean()
+        return loss_fg.mean() + loss_bg.mean()
 
 
 def dice_loss(pred_logits, target, ignore_index=255):
