@@ -34,6 +34,8 @@ exp='dinov3_small_testrun'
 MODELS=(
     "m-zeroshot"
     "m-zeroshot"
+    "m-mix-100-awl"
+    "m-mix-100-awl"
     "m-citizen"
     "m-citizen"
     "m-expert"
@@ -45,6 +47,8 @@ MODELS=(
 )
 
 METHODS=(
+    "unimatch_v2"
+    "test_model"
     "unimatch_v2"
     "test_model"
     "unimatch_v2"

@@ -1,6 +1,7 @@
 import timm
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 
 
 class DINOv3Backbone(nn.Module):
@@ -50,6 +51,106 @@ class DINOv3Backbone(nn.Module):
 
         self.embed_dim = self.model.embed_dim
         self.patch_size = 16
+
+        # CLS attention hook state (populated only when enable_cls_attn_hook() is called)
+        self._last_cls_attn = None
+        self._attn_hook_handle = None
+
+    def enable_cls_attn_hook(self):
+        """Register a forward hook on the last transformer block to capture CLS attention.
+
+        Disables fused (flash) attention for the last block so that explicit
+        post-softmax weights are computed and made accessible.  Call this once
+        after model construction when AWL is enabled.  Idempotent: calling
+        again replaces the existing hook.
+        """
+        if self._attn_hook_handle is not None:
+            self._attn_hook_handle.remove()
+
+        attn_module = self.model.blocks[-1].attn
+        # Disable fused SDPA so that the explicit softmax path runs and
+        # attn_drop receives the attention matrix as its input.
+        attn_module.fused_attn = False
+
+        def _hook(module, inp, output):
+            # inp[0]: (B, num_heads, seq_len, seq_len) post-softmax attention
+            self._last_cls_attn = inp[0].detach()
+
+        self._attn_hook_handle = attn_module.attn_drop.register_forward_hook(_hook)
+
+    def get_last_cls_attn(self, h, w):
+        """Return the last captured CLS attention map upsampled to (h, w).
+
+        Must be called after a forward pass when ``enable_cls_attn_hook()``
+        has been called.  Returns None and warns if the hook did not fire
+        (e.g. the backbone was not called during the forward pass).
+
+        Parameters
+        ----------
+        h : int
+            Target height in pixels.
+        w : int
+            Target width in pixels.
+
+        Returns
+        -------
+        torch.Tensor or None
+            Shape ``(B, h, w)``, values in [0, 1].  None if hook did not fire.
+        """
+        if self._last_cls_attn is None:
+            import warnings
+            warnings.warn(
+                "DINOv3Backbone: CLS attention hook did not fire. "
+                "Ensure enable_cls_attn_hook() was called and a forward pass ran.",
+                RuntimeWarning,
+                stacklevel=2,
+            )
+            return None
+
+        attn = self._last_cls_attn  # (B, num_heads, seq_len, seq_len)
+        num_prefix = self.model.blocks[-1].attn.num_prefix_tokens
+        # CLS token is index 0; patch tokens start at num_prefix
+        cls_to_patches = attn[:, :, 0, num_prefix:]  # (B, num_heads, num_patches)
+        # Average over heads
+        cls_attn = cls_to_patches.mean(dim=1)  # (B, num_patches)
+
+        B = cls_attn.shape[0]
+        h_p = h // self.patch_size
+        w_p = w // self.patch_size
+        cls_attn = cls_attn.reshape(B, 1, h_p, w_p)
+        cls_attn = F.interpolate(cls_attn, size=(h, w), mode="bilinear", align_corners=False)
+        return cls_attn.squeeze(1)  # (B, h, w)
+
+    def get_last_cls_attn_per_head(self, h, w):
+        """Return per-head CLS attention maps, upsampled to (h, w).
+
+        Useful for visualisation.  Returns None if the hook did not fire.
+
+        Parameters
+        ----------
+        h : int
+            Target height.
+        w : int
+            Target width.
+
+        Returns
+        -------
+        torch.Tensor or None
+            Shape ``(B, num_heads, h, w)``.
+        """
+        if self._last_cls_attn is None:
+            return None
+
+        attn = self._last_cls_attn  # (B, num_heads, seq_len, seq_len)
+        num_prefix = self.model.blocks[-1].attn.num_prefix_tokens
+        cls_to_patches = attn[:, :, 0, num_prefix:]  # (B, num_heads, num_patches)
+
+        B, nh, _ = cls_to_patches.shape
+        h_p = h // self.patch_size
+        w_p = w // self.patch_size
+        maps = cls_to_patches.reshape(B, nh, h_p, w_p)
+        maps = F.interpolate(maps, size=(h, w), mode="bilinear", align_corners=False)
+        return maps  # (B, num_heads, h, w)
 
     def get_intermediate_layers(self, x, n):
         """Return intermediate transformer features.

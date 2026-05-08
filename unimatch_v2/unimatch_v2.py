@@ -15,11 +15,11 @@ from torch.utils.data import DataLoader, SubsetRandomSampler
 from torch.utils.tensorboard import SummaryWriter
 import yaml
 
-from dataset.boxsup import BoxSupDataset, boxsup_collate_fn, make_box_corrected_mask
+from dataset.boxsup import BoxSupDataset, boxsup_collate_fn, make_box_corrected_mask, make_fixed_box_mask
 from dataset.semi import SemiSmokeDataset
 from model.semseg.dpt import DPT
 from supervised import evaluate_new
-from util.utils import count_params, init_log, AverageMeter, BoundaryLenienceCELoss, BoundaryLenienceDiceLoss, dice_loss, eval_score, update_loss_history, compute_lr
+from util.utils import count_params, init_log, AverageMeter, BoundaryLenienceCELoss, BoundaryLenienceDiceLoss, dice_loss, eval_score, update_loss_history, compute_lr, AttentionWeightedLoss
 from plot_training_curves import plot_loss_curve
 from util.dist_helper import setup_distributed
 
@@ -179,6 +179,12 @@ def main():
         param.requires_grad = False
 
     bl_cfg = cfg.get('boundary_lenience', {})
+
+    use_awl = bool(training_cfg.get('awl', False))
+    awl_weight = float(training_cfg.get('awl_weight', 1.0))
+    awl_gamma = float(training_cfg.get('awl_gamma', 0.3))
+    awl_citizen_batch_ratio = float(training_cfg.get('awl_citizen_batch_ratio', 0.25))
+
     if cfg['criterion']['name'] == 'CELossAndDiceLoss':
         if bl_cfg.get('enabled', False):
             criterion_l = BoundaryLenienceCELoss(
@@ -204,6 +210,15 @@ def main():
             dice_loss_fn = dice_loss
     else:
         raise NotImplementedError('%s criterion is not implemented' % cfg['criterion']['name'])
+
+    if use_awl:
+        awl_criterion = AttentionWeightedLoss(gamma=awl_gamma).cuda(local_rank)
+        model.module.backbone.enable_cls_attn_hook()
+        if rank == 0:
+            logger.info('AWL enabled: weight %.2f, gamma %.2f, citizen batch ratio %.2f\n' %
+                        (awl_weight, awl_gamma, awl_citizen_batch_ratio))
+    else:
+        awl_criterion = None
 
     current_dataset = cfg['dataset']
 
@@ -264,6 +279,7 @@ def main():
     clear_batch_size = max(smoke_batch_size // 10, 1)
     has_clear_dataset = bool(training_cfg.get('clear_dataset'))
     batch_size = smoke_batch_size + (clear_batch_size if has_clear_dataset else 0)
+    citizen_batch_size = max(1, int(smoke_batch_size * awl_citizen_batch_ratio)) if use_awl else smoke_batch_size
 
     trainloader_u = DataLoader(
         trainset_u,
@@ -277,7 +293,7 @@ def main():
     if citizen_is_boxsup:
         trainloader_citizen = DataLoader(
             trainset_citizen,
-            batch_size=smoke_batch_size,
+            batch_size=citizen_batch_size,
             pin_memory=True,
             num_workers=4,
             drop_last=True,
@@ -406,6 +422,7 @@ def main():
         total_loss_dice = AverageMeter()
         total_loss_s = AverageMeter()
         total_loss_c = AverageMeter()
+        total_loss_awl = AverageMeter()
         total_mask_ratio = AverageMeter()
 
         trainloader_smoke.sampler.set_epoch(epoch)
@@ -517,15 +534,35 @@ def main():
                 loss_c_s = (loss_c_s1 + loss_c_s2) / 2.0
 
                 loss_u_s = (loss_u_s1 + loss_u_s2 + loss_c_s) / 3.0
+
+                if awl_criterion is not None:
+                    # AWL on the weak citizen view using student model (hook already fired
+                    # during the student's forward on the strong views above; fire again
+                    # on the weak view to get the correct attention for these pixels)
+                    pred_c_w_student = model(img_c_w)
+                    H_c, W_c = img_c_w.shape[-2:]
+                    alpha_c = model.module.backbone.get_last_cls_attn(H_c, W_c)
+                    box_mask_c = make_fixed_box_mask(bboxes_c, H_c, W_c).float()
+                    # EMA teacher pseudo-mask intersected with box: used as η_c for
+                    # dynamic fill-rate regularisation (replaces GrabCut from Box2Seg)
+                    conf_c_smoke = pred_c_w.softmax(dim=1)[:, 1]
+                    pseudo_mask_c = (conf_c_smoke > cfg['conf_thresh']).float() * box_mask_c
+                    loss_awl = awl_criterion(
+                        pred_c_w_student, box_mask_c, alpha=alpha_c, pseudo_mask=pseudo_mask_c
+                    )
+                    total_loss_awl.update(loss_awl.item())
+                else:
+                    loss_awl = torch.zeros(1, device=img_x.device)
             else:
                 loss_c_s = torch.zeros(1).cuda(local_rank)
+                loss_awl = torch.zeros(1).cuda(local_rank)
 
             loss_ce_w = cfg['criterion'].get('loss_ce_weight', 0.25)
             loss_dice_w = cfg['criterion'].get('loss_dice_weight', 0.25)
             loss_u_w = cfg['criterion'].get('loss_u_weight', 0.5)
             loss_x_ce = criterion_l(pred_x, mask_x) if loss_ce_w > 0 else torch.zeros(1).cuda(local_rank)
             loss_x_dice = dice_loss_fn(pred_x, mask_x) if loss_dice_w > 0 else torch.zeros(1).cuda(local_rank)
-            loss = loss_ce_w * loss_x_ce + loss_dice_w * loss_x_dice + loss_u_w * loss_u_s
+            loss = loss_ce_w * loss_x_ce + loss_dice_w * loss_x_dice + loss_u_w * loss_u_s + awl_weight * loss_awl
 
             optimizer.zero_grad()
             loss.backward()
@@ -536,6 +573,8 @@ def main():
             total_loss_dice.update(loss_x_dice.item())
             total_loss_s.update(loss_u_s.item())
             total_loss_c.update(loss_c_s.item())
+            if awl_criterion is not None:
+                total_loss_awl.update(loss_awl.item())
             mask_ratio = ((conf_u_w >= cfg['conf_thresh']) & (ignore_mask != 255)).sum().item() / max(
                     (ignore_mask != 255).sum().item(), 1)
             total_mask_ratio.update(mask_ratio)
@@ -562,16 +601,28 @@ def main():
                 writer.add_scalar('train/loss_s', loss_u_s.item(), iters)
                 writer.add_scalar('train/loss_c', loss_c_s.item(), iters)
                 writer.add_scalar('train/mask_ratio', mask_ratio, iters)
+                if awl_criterion is not None:
+                    writer.add_scalar('train/loss_awl', loss_awl.item(), iters)
 
             if (i % max(len(trainloader_u) // 8, 1) == 0) and (rank == 0):
-                logger.info(
-                    'Iters: {:04d}, LR: {:.7f}, Total loss: {:.3f}, Loss CE: {:.3f}, Loss dice: {:.3f}, '
-                    'Loss u: {:.3f}, Loss c: {:.3f}, Mask ratio: {:.3f}'.format(
-                        i, optimizer.param_groups[0]['lr'], total_loss.avg, total_loss_x.avg,
-                        total_loss_dice.avg, total_loss_s.avg, total_loss_c.avg,
-                        total_mask_ratio.avg
+                if awl_criterion is not None:
+                    logger.info(
+                        'Iters: {:04d}, LR: {:.7f}, Total loss: {:.3f}, Loss CE: {:.3f}, Loss dice: {:.3f}, '
+                        'Loss u: {:.3f}, Loss c: {:.3f}, Loss AWL: {:.3f}, Mask ratio: {:.3f}'.format(
+                            i, optimizer.param_groups[0]['lr'], total_loss.avg, total_loss_x.avg,
+                            total_loss_dice.avg, total_loss_s.avg, total_loss_c.avg,
+                            total_loss_awl.avg, total_mask_ratio.avg
+                        )
                     )
-                )
+                else:
+                    logger.info(
+                        'Iters: {:04d}, LR: {:.7f}, Total loss: {:.3f}, Loss CE: {:.3f}, Loss dice: {:.3f}, '
+                        'Loss u: {:.3f}, Loss c: {:.3f}, Mask ratio: {:.3f}'.format(
+                            i, optimizer.param_groups[0]['lr'], total_loss.avg, total_loss_x.avg,
+                            total_loss_dice.avg, total_loss_s.avg, total_loss_c.avg,
+                            total_mask_ratio.avg
+                        )
+                    )
 
         if rank == 0:
             logger.info('***** Epoch {:04d} ***** >>>> Train Loss: {:.4f}'.format(epoch, total_loss.avg))
