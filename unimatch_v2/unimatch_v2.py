@@ -15,11 +15,11 @@ from torch.utils.data import DataLoader, SubsetRandomSampler
 from torch.utils.tensorboard import SummaryWriter
 import yaml
 
-from dataset.boxsup import BoxSupDataset, boxsup_collate_fn, make_box_corrected_mask, make_fixed_box_mask
+from dataset.boxsup import BoxSupDataset, boxsup_collate_fn, make_box_corrected_mask, make_fixed_box_mask, compute_box_confidence_weights
 from dataset.semi import SemiSmokeDataset
 from model.semseg.dpt import DPT
 from supervised import evaluate_new
-from util.utils import count_params, init_log, AverageMeter, BoundaryLenienceCELoss, BoundaryLenienceDiceLoss, dice_loss, eval_score, update_loss_history, compute_lr, AttentionWeightedLoss
+from util.utils import count_params, init_log, AverageMeter, BoundaryLenienceCELoss, BoundaryLenienceDiceLoss, dice_loss, dice_loss_per_image, eval_score, update_loss_history, compute_lr, AttentionWeightedLoss
 from plot_training_curves import plot_loss_curve
 from util.dist_helper import setup_distributed
 
@@ -437,7 +437,7 @@ def main():
                 for batch in zip(cycle(iter(trainloader_smoke)), cycle(iter(trainloader_clear)))
             )
         else:
-            combined_loader = iter(trainloader_smoke)
+            combined_loader = cycle(iter(trainloader_smoke))
 
         loader = zip(combined_loader, trainloader_u)
 
@@ -505,7 +505,6 @@ def main():
 
                     with torch.no_grad():
                         pred_c_w = model_ema(img_c_w).detach()
-                        conf_c_w = pred_c_w.softmax(dim=1).max(dim=1)[0]
                         mask_c_w = pred_c_w.argmax(dim=1)
 
                     if citizen_correction:
@@ -518,20 +517,26 @@ def main():
 
                     pred_c_s1, pred_c_s2 = model(torch.cat((img_c_s1, img_c_s2)), comp_drop=True).chunk(2)
 
-                    mask_c_w1, conf_c_w1 = mask_c_w.clone(), conf_c_w.clone()
-                    mask_c_w2, conf_c_w2 = mask_c_w.clone(), conf_c_w.clone()
+                    mask_c_w1 = mask_c_w.clone()
+                    mask_c_w2 = mask_c_w.clone()
+                    # Compute per-image confidence weight (Mask-Aware Confidence Score)
+                    # before CutMix mixing, based on the box-corrected EMA prediction.
+                    smoke_prob_c_w = pred_c_w.softmax(dim=1)[:, 1]   # (B, H, W)
+                    box_weights = compute_box_confidence_weights(smoke_prob_c_w, mask_c_w, bboxes_c)  # (B,)
+
                     mask_c_w1[cutmix_box1_c == 1] = mask_c_w.flip(0)[cutmix_box1_c == 1]
-                    conf_c_w1[cutmix_box1_c == 1] = conf_c_w.flip(0)[cutmix_box1_c == 1]
                     mask_c_w2[cutmix_box2_c == 1] = mask_c_w.flip(0)[cutmix_box2_c == 1]
-                    conf_c_w2[cutmix_box2_c == 1] = conf_c_w.flip(0)[cutmix_box2_c == 1]
 
-                    loss_c_s1 = criterion_u(pred_c_s1, mask_c_w1)
-                    loss_c_s1 = loss_c_s1 * (conf_c_w1 >= cfg['conf_thresh'])
-                    loss_c_s1 = loss_c_s1.sum() / max(loss_c_s1.numel(), 1)
+                    # Mix per-image weights through CutMix: each blended image draws
+                    # (1-frac) weight from itself and frac from its CutMix partner.
+                    cutmix_frac1 = cutmix_box1_c.float().mean(dim=(1, 2))   # (B,)
+                    cutmix_frac2 = cutmix_box2_c.float().mean(dim=(1, 2))   # (B,)
+                    box_weights_1 = (1.0 - cutmix_frac1) * box_weights + cutmix_frac1 * box_weights.flip(0)
+                    box_weights_2 = (1.0 - cutmix_frac2) * box_weights + cutmix_frac2 * box_weights.flip(0)
 
-                    loss_c_s2 = criterion_u(pred_c_s2, mask_c_w2)
-                    loss_c_s2 = loss_c_s2 * (conf_c_w2 >= cfg['conf_thresh'])
-                    loss_c_s2 = loss_c_s2.sum() / max(loss_c_s2.numel(), 1)
+                    # Confidence-weighted per-image Dice loss (replaces CE + hard threshold)
+                    loss_c_s1 = (dice_loss_per_image(pred_c_s1, mask_c_w1) * box_weights_1).mean()
+                    loss_c_s2 = (dice_loss_per_image(pred_c_s2, mask_c_w2) * box_weights_2).mean()
 
                     loss_c_s = (loss_c_s1 + loss_c_s2) / 2.0
                     loss_u_s = (loss_u_s + loss_c_s) / 2.0

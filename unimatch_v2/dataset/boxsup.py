@@ -400,6 +400,61 @@ def make_box_corrected_mask(ema_argmax, bboxes_padded):
     return make_boxsup_mask(ema_argmax, bboxes_padded)
 
 
+def compute_box_confidence_weights(smoke_probs, mask_argmax, bboxes_padded):
+    """Compute per-image Mask-Aware Confidence Score from EMA teacher predictions.
+
+    For each image the weight is the mean smoke probability over pixels that
+    are (a) inside at least one valid GT bounding box and (b) predicted as
+    smoke (argmax == 1) by the EMA teacher.  This gives a soft, image-level
+    quality signal: if the teacher is uncertain or predicts no smoke inside
+    the box, the weight approaches 0.
+
+    Parameters
+    ----------
+    smoke_probs : torch.Tensor
+        Shape (B, H, W), float32.  Softmax probability for class 1 (smoke)
+        from the EMA teacher.
+    mask_argmax : torch.Tensor
+        Shape (B, H, W), dtype long.  EMA teacher argmax (typically already
+        box-corrected via ``make_box_corrected_mask``).
+    bboxes_padded : torch.Tensor
+        Shape (B, N, 4), dtype float32.  XYXY bboxes; x1 == -1 means padding.
+
+    Returns
+    -------
+    torch.Tensor
+        Shape (B,), float32.  Per-image confidence weights in [0, 1].
+    """
+    B, H, W = smoke_probs.shape
+    device = smoke_probs.device
+    N = bboxes_padded.shape[1]
+
+    xs = torch.arange(W, device=device).float().view(1, W)
+    ys = torch.arange(H, device=device).float().view(H, 1)
+
+    x1 = bboxes_padded[:, :, 0].view(B, N, 1, 1)
+    y1 = bboxes_padded[:, :, 1].view(B, N, 1, 1)
+    x2 = bboxes_padded[:, :, 2].view(B, N, 1, 1)
+    y2 = bboxes_padded[:, :, 3].view(B, N, 1, 1)
+    valid = (x1 >= 0)
+
+    in_x = (xs >= x1) & (xs < x2)
+    in_y = (ys >= y1) & (ys < y2)
+    in_box = in_x & in_y & valid                          # (B, N, H, W)
+    any_box = in_box.any(dim=1)                           # (B, H, W)
+
+    is_smoke_in_box = any_box & (mask_argmax == 1)        # (B, H, W)
+
+    pixel_count = is_smoke_in_box.float().sum(dim=(1, 2))                     # (B,)
+    prob_sum = (smoke_probs * is_smoke_in_box.float()).sum(dim=(1, 2))        # (B,)
+    weights = torch.where(
+        pixel_count > 0,
+        prob_sum / pixel_count.clamp(min=1),
+        torch.zeros_like(prob_sum),
+    )
+    return weights
+
+
 def mil_box_loss(pred_logits, bboxes_padded, area_ratio=0.2):
     """Differentiable MIL inside-box loss for smoke detection.
 

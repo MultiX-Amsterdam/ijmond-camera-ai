@@ -240,6 +240,35 @@ def dice_loss(pred_logits, target, ignore_index=255):
     return 1.0 - (2.0 * intersection + 1.0) / (p.sum() + t.sum() + 1.0)
 
 
+def dice_loss_per_image(pred_logits, target, ignore_index=255):
+    """Soft Dice loss per image on the smoke class (class 1).
+
+    Same formula as ``dice_loss`` but reduced over spatial dimensions only,
+    returning one loss value per image in the batch.  Intended for use with
+    per-image confidence weighting.
+
+    Parameters
+    ----------
+    pred_logits : torch.Tensor
+        Shape (B, nclass, H, W). Raw logits.
+    target : torch.Tensor
+        Shape (B, H, W), dtype long. Ground-truth labels.
+    ignore_index : int, optional
+        Label value to exclude from the computation (default 255).
+
+    Returns
+    -------
+    torch.Tensor
+        Shape (B,), float32. Per-image Dice loss values.
+    """
+    prob = pred_logits.softmax(dim=1)[:, 1]           # (B, H, W)
+    valid = (target != ignore_index).float()
+    t = (target == 1).float() * valid
+    p = prob * valid
+    intersection = (p * t).sum(dim=(1, 2))            # (B,)
+    return 1.0 - (2.0 * intersection + 1.0) / (p.sum(dim=(1, 2)) + t.sum(dim=(1, 2)) + 1.0)
+
+
 def intersectionAndUnion(output, target, K, ignore_index=255):
     # 'K' classes, output and target sizes are N or N * L or N * H * W, each value in range 0 to K - 1.
     assert output.ndim in [1, 2, 3]
