@@ -15,12 +15,12 @@ citizen         (2)  citizen_with_mask.txt, citizen_without_mask.txt
 unlabeled       (1)  unlabeled.txt
 expert val/test (2)  expert_standard_val.txt,
                      expert_standard_test.txt
-expert train   (10)  expert_standard_train_{P}_{with,without}_masks.txt
-                     for P in 100, 80, 60, 40, 20
-mix train      (10)  mix_standard_train_{P}_{with,without}_masks.txt
-                     for P in 100, 80, 60, 40, 20
+expert train    (6)  expert_standard_train_{P}_{with,without}_masks.txt
+                     for P in 100, 50, 25
+mix train       (6)  mix_standard_train_{P}_{with,without}_masks.txt
+                     for P in 100, 50, 25
 
-Total: 27 files.
+Total: 19 files.
 
 Usage:
     python create_experiment_datasets.py
@@ -35,7 +35,7 @@ EXP_DIR = os.path.join(DATASET, "experiment")
 
 SEG_CROPPED = "ijmond_seg/test/cropped/"
 SEG_CAM_BAL = SEG_CROPPED + "splits/split_standard/"
-PERCENTAGES = [100, 80, 60, 40, 20]
+PERCENTAGES = [100, 50, 25]
 
 
 # ---------------------------------------------------------------------------

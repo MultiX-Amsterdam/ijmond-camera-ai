@@ -58,6 +58,10 @@ def _corrupt_one(task, data_root, images_dir, corrupt_dir):
         Absolute path to the output corrupted images directory.
     """
     img_rel, corruption, severity = task
+    stem, ext = os.path.splitext(os.path.basename(img_rel))
+    corrupt_filename = f"{stem}_{corruption}_{severity}{ext}"
+    if os.path.exists(os.path.join(corrupt_dir, corrupt_filename)):
+        return
     img_full = os.path.join(data_root, img_rel)
     corrupt_image(
         img_full,

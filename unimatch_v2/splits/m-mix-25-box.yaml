@@ -1,7 +1,7 @@
 # arguments for setting up and training a model
 configuration: configs/ijmond_dinov3.yaml
-smoke_dataset: experiment/expert_standard_train_60_with_masks.txt
-clear_dataset: experiment/expert_standard_train_60_without_masks.txt
+smoke_dataset: experiment/expert_standard_train_25_with_masks.txt
+clear_dataset: experiment/expert_standard_train_25_without_masks.txt
 unlabeled_dataset: experiment/unlabeled.txt
 validation_dataset: experiment/expert_standard_val.txt
 test_dataset: experiment/expert_standard_test.txt
@@ -11,7 +11,4 @@ test_model: best.pth
 pretrained_model: m-zeroshot
 citizen_data: ijmond_bbox/filtered_bbox_labels_1_aug_2025.json
 citizen_img: ijmond_bbox/img
-citizen_correction: false
-awl: true
-awl_weight: 0.25
-awl_citizen_batch_ratio: 0.25
+citizen_correction: true

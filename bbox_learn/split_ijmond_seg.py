@@ -29,23 +29,20 @@ Now, we can split the dataset into training, validation, and test sets based on 
 First, we need to merge the images with masks and without masks into one list.
 Then, we can sort the merged list by timestamps.
 We need to keep track of which images have masks and which do not.
-There will be two different types of splits:
+There will be three different types of splits:
 - 1. Split by timestamp only: training set first 70% sorted by timestamps, validation set the next 10%, test set the final 20%
 - 2. Split by camera view only: training set the first 80% of "kooks_2" sorted by timestamps, validation set the rest of 20% of "kooks_2" sorted by timestamps, test set "hoogovens_6_7" and "kooks_1"
-Now there is one more thing: for the training split, we need to create five different versions of it, with 100%, 80%, 60%, 40%, and 20% of the training data, sorted by timestamps.
+- 3. Standard split: check the docstring of the split_standard function for details
+Now there is one more thing: for the training split, we need to create three different versions of it, with 100%, 50%, and 25% of the training data, sorted by timestamps.
 The 100% training split is the full training set.
-The 80% training split is the last 80% of the training set sorted by timestamps.
-The 60% training split is the last 60% of the training set sorted by timestamps.
-The 40% training split is the last 40% of the training set sorted by timestamps.
-The 20% training split is the last 20% of the training set sorted by timestamps.
+The 50% training split is the last 50% of the training set sorted by timestamps.
+The 25% training split is the last 25% of the training set sorted by timestamps.
 The reason for this is to simulate different amounts of data available for training.
 These percentages are the "last" part in the training set according to sorted timestamps to ensure that the timestamps, when considered together with the validation and test sets, are continuous.
 Now, we can proceed to split the dataset into the following structure:
   - train/100
-  - train/80
-  - train/60
-  - train/40
-  - train/20
+  - train/50
+  - train/25
   - val
   - test
 Next, we need to seperate each split into two files: one with masks and one without masks.
@@ -54,18 +51,14 @@ For example, for the training split with 100% data, we will have two files:
 - train/100_without_masks.txt
 The final output should look like below:
 - the splits data should be saved in "dataset/ijmond_seg/test/cropped/splits/"
-- it should contain two types of splits in two subfolders: "split_by_timestamp/" and "split_by_camera/"
+- it should contain three types of splits in three subfolders: "split_by_timestamp/", "split_by_camera/", and "split_standard/"
 - each split in a subfolder should contain the following files:
   - train/100_with_masks.txt
   - train/100_without_masks.txt
-  - train/80_with_masks.txt
-  - train/80_without_masks.txt
-  - train/60_with_masks.txt
-  - train/60_without_masks.txt
-  - train/40_with_masks.txt
-  - train/40_without_masks.txt
-  - train/20_with_masks.txt
-  - train/20_without_masks.txt
+  - train/50_with_masks.txt
+  - train/50_without_masks.txt
+  - train/25_with_masks.txt
+  - train/25_without_masks.txt
   - val_with_masks.txt
   - val_without_masks.txt
   - test_with_masks.txt
@@ -75,7 +68,7 @@ The final output should look like below:
 
 """
 Finally, write a testing function to check that, for each split, one image-mask pair only exists in the original dataset once.
-We have two sets that we need to check: "splits/split_by_timestamp/" and "splits/split_by_camera/".
+We have three sets that we need to check: "splits/split_by_timestamp/", "splits/split_by_camera/", and "splits/split_standard/".
 For each set, we need to do two checks, one for with masks, one for without masks.
 The first check is with masks using the following steps:
 - merge the following files into one list and check that there is no duplicate entries in the merged list
@@ -99,8 +92,8 @@ Behavior:
   - dataset/ijmond_seg/test/cropped/test_without_mask.txt
 - Extract camera (before "__") and timestamp (before "_frame" after "__").
 - Print distributions (per-day and per-camera) for with/without masks.
-- Create two split types: split_by_timestamp and split_by_camera.
-- For training, produce 100/80/60/40/20 variants (earliest by timestamp).
+- Create three split types: split_by_timestamp, split_by_camera, and split_standard.
+- For training, produce 100/50/25 variants (earliest by timestamp).
 - Write with/without mask files and a metadata.json per split folder.
 - Run checks ensuring merged splits map back to originals exactly once.
 """
@@ -254,7 +247,7 @@ def write_list(path: str, entries: List[Dict], with_mask_file: bool) -> None:
 
 def write_training_variants(train_entries: List[Dict], base_dir: str, split_name: str = "", per_camera: bool = False) -> None:
     train_dir = os.path.join(base_dir, "train")
-    for pct in (100, 80, 60, 40, 20):
+    for pct in (100, 50, 25):
         if per_camera:
             # Take the first N% of each camera's training data independently, then merge
             cameras = sorted({e["camera"] for e in train_entries if e.get("camera")})
