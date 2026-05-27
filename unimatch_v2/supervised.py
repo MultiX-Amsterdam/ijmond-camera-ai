@@ -429,6 +429,8 @@ def main():
             initial_weights_path
         )
 
+    dist.barrier()
+
     initial_state_dict = torch.load(initial_weights_path, map_location='cpu', weights_only=True)
 
     for epoch in range(epoch + 1, cfg['epochs']):
