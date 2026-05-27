@@ -10,3 +10,5 @@ pip install --upgrade tensorboard==2.20.0
 pip install --upgrade pyyaml==6.0.3
 pip install --upgrade timm==1.0.26
 pip install --upgrade numba==0.65.1
+pip install --upgrade scikit-image==0.25.2
+pip install --upgrade filetype==1.2.0
