@@ -77,6 +77,101 @@ def eval_score(evaluation):
     return 2.0 * gf1 * inv_far / denom
 
 
+def is_pareto_optimal(gF1, rF1, pareto_history):
+    """Check whether (gF1, rF1) is not dominated by any prior epoch.
+
+    An entry (gF1_e, rF1_e) in pareto_history dominates (gF1, rF1) when
+    gF1_e >= gF1, rF1_e >= rF1, and at least one inequality is strict.
+
+    Parameters
+    ----------
+    gF1 : float
+        Global F1 score on the clean validation set for the current epoch.
+    rF1 : float
+        Global F1 score on the robust (augmented) validation set for the
+        current epoch.
+    pareto_history : list of dict
+        Each dict has keys "epoch" (int), "gF1" (float), "rF1" (float).
+
+    Returns
+    -------
+    bool
+        True if the current epoch is Pareto-optimal (not dominated by any
+        entry in pareto_history).
+    """
+    for entry in pareto_history:
+        e_gF1, e_rF1 = entry["gF1"], entry["rF1"]
+        if e_gF1 >= gF1 and e_rF1 >= rF1 and (e_gF1 > gF1 or e_rF1 > rF1):
+            return False
+    return True
+
+
+def update_pareto_front(epoch, gF1, rF1, pareto_history):
+    """Add the current epoch to the Pareto front, pruning dominated entries.
+
+    Entries in pareto_history that are dominated by (gF1, rF1) are removed.
+    The current epoch is then appended.
+
+    Parameters
+    ----------
+    epoch : int
+        Current training epoch.
+    gF1 : float
+        Global F1 score on the clean validation set.
+    rF1 : float
+        Global F1 score on the robust (augmented) validation set.
+    pareto_history : list of dict
+        Existing Pareto front; modified in place and returned.
+
+    Returns
+    -------
+    list of dict
+        Updated Pareto front including the current epoch.
+    """
+    pareto_history = [
+        e for e in pareto_history
+        if not (gF1 >= e["gF1"] and rF1 >= e["rF1"] and (gF1 > e["gF1"] or rF1 > e["rF1"]))
+    ]
+    pareto_history.append({"epoch": epoch, "gF1": gF1, "rF1": rF1})
+    return pareto_history
+
+
+def calculate_angle_score(model, initial_state_dict):
+    """Compute the angle (radians) between current weights and initial weights.
+
+    Flattens all parameters with requires_grad=True into a single vector for
+    both the current model and the initial state dict, then returns the
+    arc-cosine of their cosine similarity. A value near 0 indicates the model
+    has barely moved; a value near pi/2 indicates near-orthogonal movement.
+
+    Parameters
+    ----------
+    model : torch.nn.Module
+        The current model (will be evaluated on CPU copies of parameters).
+    initial_state_dict : dict
+        State dict captured at the start of training (CPU tensors).
+
+    Returns
+    -------
+    float
+        Angle in radians in [0, pi].
+    """
+    current_params = []
+    initial_params = []
+
+    for name, param in model.named_parameters():
+        if param.requires_grad:
+            current_params.append(param.detach().cpu().float().reshape(-1))
+            initial_params.append(initial_state_dict[name].float().reshape(-1))
+
+    v_t = torch.cat(current_params)
+    v_0 = torch.cat(initial_params)
+
+    cos_sim = torch.dot(v_t, v_0) / (v_t.norm() * v_0.norm() + 1e-12)
+    cos_sim = cos_sim.clamp(-1.0, 1.0)
+    return torch.acos(cos_sim).item()
+
+
 class AverageMeter(object):
     """Computes and stores the average and current value"""
 

@@ -180,6 +180,8 @@ for i in "${!MODELS[@]}"; do
     echo "  save_path=${save_path}"
     echo "========================================================"
 
+    ITER_TS=$(date +%Y%m%d_%H%M%S)
+
     if [ "$NUM_GPUS" -gt 1 ]; then
         torchrun \
             --nproc_per_node="$NUM_GPUS" \
@@ -189,13 +191,13 @@ for i in "${!MODELS[@]}"; do
             --training-config "$training_config" \
             --save-path "$save_path" \
             --port "$PORT" \
-            2>&1 | tee "${save_path}/out_${RUN_TS}.log"
+            2>&1 | tee "${save_path}/out_${method}_${ITER_TS}.log"
     else
         python "${method}.py" \
             --training-config "$training_config" \
             --save-path "$save_path" \
             --port "$PORT" \
-            2>&1 | tee "${save_path}/out_${RUN_TS}.log"
+            2>&1 | tee "${save_path}/out_${method}_${ITER_TS}.log"
     fi
 
     exit_code=${PIPESTATUS[0]}

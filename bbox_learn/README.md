@@ -158,6 +158,8 @@ Below is the explaination for split by timestamp:
     └── metadata.json # the coverage of camera views and dates for each txt file
 ```
 
+We also provide a standard split for evaluation. The above two scenarios are harder.
+
 You can check if the cropped IJmond segmentation dataset can be loaded. This will create the `debug_plot_ijmond_seg_cropped_train_with_mask_20.png` and `debug_plot_ijmond_seg_cropped_train_with_mask_20_transformed.png` files for debugging.
 ```sh
 python smoke_dataset.py dataset/ijmond_seg/test/cropped/splits/split_by_timestamp/train/20_with_masks.txt dataset/ijmond_seg/test/cropped/ ijmond_seg_cropped_train_with_mask_20
@@ -166,6 +168,11 @@ python smoke_dataset.py dataset/ijmond_seg/test/cropped/splits/split_by_timestam
 And lastly, run the following to create dataset txt files that are needed for the experiment:
 ```sh
 python create_experiment_datasets.py
+```
+
+Also, run the following script to create weather corrupted images for robust benchmarking:
+```sh
+python create_corrupt_dataset.py
 ```
 
 ## Experiment Settings

@@ -19,7 +19,7 @@ import yaml
 from dataset.semi import SemiSmokeDataset
 from model.semseg.dpt import DPT
 from util.classes import CLASSES
-from util.utils import count_params, AverageMeter, intersectionAndUnion, init_log, BoundaryLenienceCELoss, BoundaryLenienceDiceLoss, dice_loss, eval_score, update_loss_history, compute_lr
+from util.utils import count_params, AverageMeter, intersectionAndUnion, init_log, BoundaryLenienceCELoss, BoundaryLenienceDiceLoss, dice_loss, eval_score, update_loss_history, compute_lr, is_pareto_optimal, update_pareto_front, calculate_angle_score
 from plot_training_curves import plot_loss_curve
 from util.dist_helper import setup_distributed
 
@@ -378,13 +378,35 @@ def main():
         shuffle=False
     )
 
+    val_robust_set = SemiSmokeDataset(
+        cfg['dataset'],
+        cfg['data_root'],
+        'val_robust',
+        id_path=training_cfg['val_robust_dataset'],
+        use_dcp=cfg.get('use_dcp', False),
+    )
+
+    val_robust_loader = DataLoader(
+        val_robust_set,
+        batch_size=1,
+        pin_memory=True,
+        num_workers=4,
+        drop_last=False,
+        shuffle=False
+    )
+
     iters = 0
     total_iters = len(trainloader) * cfg['epochs']
     warmup_iters = cfg.get('warmup_epochs', 5) * len(trainloader)
     best_epoch = -1
     best_eval = None
+    best_robust_eval = None
     best_score = None
+    pareto_history = []
+    prev_angle_score = None
     epoch = -1
+
+    initial_weights_path = os.path.join(args.save_path, 'initial_weights.pth')
 
     if os.path.exists(os.path.join(args.save_path, 'latest.pth')):
         checkpoint = torch.load(os.path.join(args.save_path, 'latest.pth'), map_location='cpu', weights_only=False)
@@ -394,9 +416,20 @@ def main():
         best_epoch = checkpoint['best_epoch']
         best_eval = checkpoint['best_eval']
         best_score = checkpoint.get('best_score')
+        pareto_history = checkpoint.get('pareto_history', [])
+        prev_angle_score = checkpoint.get('prev_angle_score', None)
+        best_robust_eval = checkpoint.get('best_robust_eval', None)
 
         if rank == 0:
             logger.info('************ Resumed from checkpoint at epoch %i\n' % epoch)
+
+    if rank == 0 and not os.path.exists(initial_weights_path):
+        torch.save(
+            {k: v.cpu().clone() for k, v in model.module.state_dict().items()},
+            initial_weights_path
+        )
+
+    initial_state_dict = torch.load(initial_weights_path, map_location='cpu', weights_only=True)
 
     for epoch in range(epoch + 1, cfg['epochs']):
         if rank == 0:
@@ -495,10 +528,27 @@ def main():
                     evaluation["mIoU"], evaluation["mF1"], evaluation["FAR"]
                 ))
 
+            robust_evaluation = evaluate_new(model, val_robust_loader, multiplier=model.module.patch_size, criterion=criterion)
+
             logger.info(
-                '***** Evaluation ***** >>>> Score (H-mean gF1 & 1-FAR): {:.4f}'.format(
-                    eval_score(evaluation)
+                '***** Robust Evaluation ***** >>>> Val Loss: {:.4f}'.format(robust_evaluation["val_loss"])
+            )
+            logger.info(
+                '***** Robust Evaluation ***** >>>> gIoU: {:.4f}, gF1: {:.4f}, gAccu: {:.4f}'.format(
+                    robust_evaluation["gIoU"], robust_evaluation["gF1"], robust_evaluation["gAccu"]
                 ))
+            logger.info(
+                '***** Robust Evaluation ***** >>>> gPre: {:.4f}, gRec: {:.4f}'.format(
+                    robust_evaluation["gPre"], robust_evaluation["gRec"]
+                ))
+            logger.info(
+                '***** Robust Evaluation ***** >>>> mIoU: {:.4f}, mF1: {:.4f}, FAR: {:.4f}'.format(
+                    robust_evaluation["mIoU"], robust_evaluation["mF1"], robust_evaluation["FAR"]
+                ))
+
+            gF1 = evaluation["gF1"]
+            rF1 = robust_evaluation["gF1"]
+
             writer.add_scalar('train/loss_epoch', total_loss.avg, epoch)
             writer.add_scalar('eval/val_loss', evaluation["val_loss"], epoch)
             writer.add_scalar('eval/gIoU', evaluation["gIoU"], epoch)
@@ -509,18 +559,57 @@ def main():
             writer.add_scalar('eval/mIoU', evaluation["mIoU"], epoch)
             writer.add_scalar('eval/mF1', evaluation["mF1"], epoch)
             writer.add_scalar('eval/FAR', evaluation["FAR"], epoch)
-            writer.add_scalar('eval/score', eval_score(evaluation), epoch)
+            writer.add_scalar('eval/robust_val_loss', robust_evaluation["val_loss"], epoch)
+            writer.add_scalar('eval/robust_gIoU', robust_evaluation["gIoU"], epoch)
+            writer.add_scalar('eval/robust_gF1', robust_evaluation["gF1"], epoch)
+            writer.add_scalar('eval/robust_gPre', robust_evaluation["gPre"], epoch)
+            writer.add_scalar('eval/robust_gRec', robust_evaluation["gRec"], epoch)
+            writer.add_scalar('eval/robust_gAccu', robust_evaluation["gAccu"], epoch)
+            writer.add_scalar('eval/robust_mIoU', robust_evaluation["mIoU"], epoch)
+            writer.add_scalar('eval/robust_mF1', robust_evaluation["mF1"], epoch)
+            writer.add_scalar('eval/robust_FAR', robust_evaluation["FAR"], epoch)
 
-            if best_score is None or eval_score(evaluation) > best_score:
+            if is_pareto_optimal(gF1, rF1, pareto_history):
                 best_epoch = epoch
                 best_eval = {k: v for k, v in evaluation.items()}
+                best_robust_eval = {k: v for k, v in robust_evaluation.items()}
                 best_score = eval_score(evaluation)
-                save_dict = {**best_eval, "checkpoint": {
-                    "model": model.state_dict(),
-                    "optimizer": optimizer.state_dict(),
-                    "epoch": epoch
-                }}
+                pareto_history = update_pareto_front(epoch, gF1, rF1, pareto_history)
+                save_dict = {
+                    **{"eval_" + k: v for k, v in best_eval.items()},
+                    **{"robust_" + k: v for k, v in best_robust_eval.items()},
+                    "checkpoint": {
+                        "model": model.state_dict(),
+                        "optimizer": optimizer.state_dict(),
+                        "epoch": epoch
+                    }
+                }
                 torch.save(save_dict, os.path.join(args.save_path, "best.pth"))
+                logger.info('***** Pareto Optimal ***** >>>> Saved best.pth at epoch {:04d} (gF1: {:.4f}, rF1: {:.4f})'.format(epoch, gF1, rF1))
+            else:
+                logger.info('***** Pareto Optimal ***** >>>> Epoch {:04d} is NOT Pareto-optimal (gF1: {:.4f}, rF1: {:.4f})'.format(epoch, gF1, rF1))
+
+            angle_score = calculate_angle_score(model.module, initial_state_dict)
+            if prev_angle_score is not None:
+                delta_angle = abs(angle_score - prev_angle_score)
+                converged = delta_angle < 1e-4
+                logger.info(
+                    '***** Convergence Check ***** >>>> Angle Score: {:.6f}, Delta Angle: {:.6f}'.format(
+                        angle_score, delta_angle
+                    )
+                )
+                logger.info(
+                    '***** Convergence Check ***** >>>> Mathematical Condition: {} (Delta={:.6f} vs epsilon=1e-4)'.format(
+                        "CONVERGED" if converged else "NOT CONVERGED", delta_angle
+                    )
+                )
+            else:
+                logger.info(
+                    '***** Convergence Check ***** >>>> Angle Score: {:.6f}, Delta Angle: N/A (first epoch)'.format(
+                        angle_score
+                    )
+                )
+            prev_angle_score = angle_score
 
             torch.save({
                 'model': model.state_dict(),
@@ -528,7 +617,10 @@ def main():
                 'epoch': epoch,
                 'best_epoch': best_epoch,
                 'best_eval': best_eval,
+                'best_robust_eval': best_robust_eval,
                 'best_score': best_score,
+                'pareto_history': pareto_history,
+                'prev_angle_score': prev_angle_score,
             }, os.path.join(args.save_path, 'latest.pth'))
 
             update_loss_history(args.save_path, epoch, total_loss.avg, evaluation["val_loss"])

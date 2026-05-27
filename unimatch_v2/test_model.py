@@ -277,6 +277,24 @@ def main():
         shuffle=False
     )
 
+    test_robust_set = SemiSmokeDataset(
+        cfg['dataset'],
+        cfg['data_root'],
+        'test',
+        None,
+        id_path=training_cfg['test_robust_dataset'],
+        use_dcp=cfg.get('use_dcp', False),
+    )
+
+    test_robust_loader = DataLoader(
+        test_robust_set,
+        batch_size=1,
+        pin_memory=True,
+        num_workers=4,
+        drop_last=False,
+        shuffle=False
+    )
+
     if rank == 0:
         evaluation = evaluate_new(model, testloader, multiplier=model.module.patch_size)
 
@@ -323,6 +341,26 @@ def main():
         if has_ema:
             visualize_predictions(model_ema, cfg['data_root'], test_txt_path, args.save_path, model_ema.patch_size, "ema", use_dcp=_use_dcp)
         logger.info('Visualizations saved to %s' % args.save_path)
+
+        # --- Robust test evaluation (pre-corrupted images) ---
+        robust_evaluation = evaluate_new(model, test_robust_loader, multiplier=model.module.patch_size)
+
+        print()
+
+        logger.info('***** Robust Evaluation *****')
+
+        for k, v in robust_evaluation.items():
+            logger.info(f"\t{k}: {v:.4f}")
+
+        if has_ema:
+            robust_evaluation_ema = evaluate_new(model_ema, test_robust_loader, multiplier=model_ema.patch_size)
+
+            print()
+
+            logger.info('***** Robust Evaluation EMA *****')
+
+            for k, v in robust_evaluation_ema.items():
+                logger.info(f"\t{k}: {v:.4f}")
 
 
 if __name__ == '__main__':

@@ -9,3 +9,4 @@ pip install --upgrade tqdm==4.67.1
 pip install --upgrade tensorboard==2.20.0
 pip install --upgrade pyyaml==6.0.3
 pip install --upgrade timm==1.0.26
+pip install --upgrade numba==0.65.1
