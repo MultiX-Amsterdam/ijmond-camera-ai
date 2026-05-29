@@ -22,6 +22,7 @@ criterion:
   loss_dice_weight: 0.5
   loss_u_weight: 0
 conf_thresh: 0.95
+model_selection_warmup_epochs: 10  # number of epochs to skip before model selection (e.g. 10 means selection starts at epoch 11)
 
 # Boundary leniency: reduces loss penalty at smoke/background edges
 boundary_lenience:

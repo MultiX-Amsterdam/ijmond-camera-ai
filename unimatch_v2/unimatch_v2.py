@@ -723,7 +723,10 @@ def main():
             writer.add_scalar('eval/robust_mF1', robust_evaluation["mF1"], epoch)
             writer.add_scalar('eval/robust_FAR', robust_evaluation["FAR"], epoch)
 
-            if is_pareto_optimal(gF1, rF1, pareto_history):
+            model_selection_warmup = cfg.get('model_selection_warmup_epochs', 0)
+            if epoch <= model_selection_warmup:
+                logger.info('***** Pareto Optimal ***** >>>> Skipping model selection at epoch {:04d} (warmup until epoch {:04d})'.format(epoch, model_selection_warmup))
+            elif is_pareto_optimal(gF1, rF1, pareto_history):
                 best_epoch = epoch
                 best_eval = {k: v for k, v in evaluation.items()}
                 best_robust_eval = {k: v for k, v in robust_evaluation.items()}
