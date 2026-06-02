@@ -52,6 +52,15 @@ if label_ts:
 section("2. Aggregated bounding boxes (after citizen annotation aggregation)")
 with open(os.path.join(BBOX_DIR, "filtered_bbox_labels_1_aug_2025.json")) as f:
     filtered = json.load(f)
+
+# Build a lookup: image_id → camera_id from the raw bbox labels.
+id_to_camera = {}
+for e in citizen_bboxes:
+    if "id" in e and "video" in e and e["video"] and "camera_id" in e["video"]:
+        id_to_camera[e["id"]] = e["video"]["camera_id"]
+
+CAMERA_NAMES = {0: "hoogovens", 1: "kooksfabriek_1", 2: "kooksfabriek_2"}
+
 total_frames = len(filtered)
 frames_with_bbox = sum(1 for e in filtered if e.get("bbox"))
 frames_without_bbox = total_frames - frames_with_bbox
@@ -60,6 +69,32 @@ print(f"Total aggregated frames:                   {total_frames}")
 print(f"  Frames with smoke bbox:                  {frames_with_bbox}")
 print(f"  Frames without smoke (no bbox / null):   {frames_without_bbox}")
 print(f"Total individual bboxes across all frames: {total_individual_bboxes}")
+
+# Per-camera breakdown.
+cam_smoke: Counter = Counter()
+cam_no_smoke: Counter = Counter()
+cam_unknown: Counter = Counter()
+for e in filtered:
+    cam = id_to_camera.get(e["id"])
+    has_smoke = bool(e.get("bbox"))
+    if cam is None:
+        cam_unknown["unknown"] += 1
+    elif has_smoke:
+        cam_smoke[cam] += 1
+    else:
+        cam_no_smoke[cam] += 1
+
+all_cams = sorted(set(list(cam_smoke.keys()) + list(cam_no_smoke.keys())))
+print("\n  Per-camera frame counts:")
+for cam in all_cams:
+    name = CAMERA_NAMES.get(cam, f"camera_{cam}")
+    smoke = cam_smoke[cam]
+    no_smoke = cam_no_smoke[cam]
+    total = smoke + no_smoke
+    print(f"    camera_id {cam} ({name}): {total} frames total  "
+          f"({smoke} with smoke, {no_smoke} without smoke)")
+if cam_unknown["unknown"]:
+    print(f"    unknown camera: {cam_unknown['unknown']} frames (id not found in raw data)")
 
 # ---------------------------------------------------------------------------
 # 3. Unlabeled training videos
