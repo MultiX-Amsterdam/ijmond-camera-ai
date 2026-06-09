@@ -10,3 +10,4 @@ test_model: best.pth
 citizen_data: ""
 citizen_img: ""
 citizen_correction: false
+epoch_ratio: 1.0

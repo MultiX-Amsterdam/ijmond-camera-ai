@@ -11,8 +11,9 @@ Key differences from the original AdelaiDet implementation:
 - Model output is 2-class softmax logits, so log_softmax is used instead of
   logsigmoid.
 - LAB color conversion is done in pure PyTorch on GPU to avoid CPU round-trips.
-- Images with no valid bounding boxes (negative citizen images) contribute zero
-  loss and are excluded from averaging.
+- Images with no valid bounding boxes (negative citizen images) receive a
+  background suppression loss (CE toward all-background) to prevent the model
+  from hallucinating smoke on all-clear images (reduces false alarm rate).
 
 Usage example::
 
@@ -338,8 +339,43 @@ def boxinst_pairwise_loss(pred, img_normalized, bboxes, tau=0.1, kernel_size=3, 
     return loss_per_image[has_box].mean()
 
 
-def boxinst_loss(pred, img_normalized, bboxes, tau=0.1, kernel_size=3, dilation=2):
-    """Combined BoxInst loss: projection + pairwise affinity.
+def boxinst_negative_loss(pred, bboxes):
+    """Background suppression loss for negative citizen images (no valid boxes).
+
+    The projection and pairwise losses only fire on positive images (those with
+    at least one valid bounding box), leaving negative (all-clear) images with
+    zero gradient.  This causes the model to hallucinate smoke on clear images,
+    driving up the false alarm rate.
+
+    This loss penalises any smoke prediction on negative images by computing
+    the mean cross-entropy toward the background class across all pixels.
+
+    Parameters
+    ----------
+    pred : torch.Tensor
+        Shape (B, 2, H, W). Raw logits from the student model.
+    bboxes : torch.Tensor
+        Shape (B, N_max, 4). XYXY pixel coords, padded with -1.
+
+    Returns
+    -------
+    torch.Tensor
+        Scalar background CE loss, averaged over negative images and all pixels.
+        Returns zero if every image in the batch has at least one valid box.
+    """
+    _, has_box = _build_box_bitmask(bboxes, pred.shape[2], pred.shape[3])
+    neg_mask = ~has_box  # (B,)
+
+    if not neg_mask.any():
+        return pred.sum() * 0.0
+
+    # log P(background) for each pixel of each negative image
+    log_p_bg = F.log_softmax(pred[neg_mask], dim=1)[:, 0]  # (N_neg, H, W)
+    return -log_p_bg.mean()
+
+
+def boxinst_loss(pred, img_normalized, bboxes, tau=0.1, kernel_size=3, dilation=2, neg_weight=1.0):
+    """Combined BoxInst loss: projection + pairwise affinity + background suppression.
 
     Parameters
     ----------
@@ -355,12 +391,16 @@ def boxinst_loss(pred, img_normalized, bboxes, tau=0.1, kernel_size=3, dilation=
         Neighbourhood kernel size (default 3).
     dilation : int, optional
         Dilation rate (default 2).
+    neg_weight : float, optional
+        Weight for the background suppression loss on negative images (default
+        1.0).  Set to 0 to disable background suppression.
 
     Returns
     -------
     torch.Tensor
-        Scalar combined loss = L_proj + L_pairwise.
+        Scalar combined loss = L_proj + L_pairwise + neg_weight * L_neg.
     """
     l_proj = boxinst_projection_loss(pred, bboxes)
     l_pairwise = boxinst_pairwise_loss(pred, img_normalized, bboxes, tau, kernel_size, dilation)
-    return l_proj + l_pairwise
+    l_neg = boxinst_negative_loss(pred, bboxes)
+    return l_proj + l_pairwise + neg_weight * l_neg

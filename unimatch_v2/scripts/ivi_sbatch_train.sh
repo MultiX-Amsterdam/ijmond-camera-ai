@@ -36,7 +36,7 @@
 #SBATCH --nodelist=ivi-cn002,ivi-cn004,ivi-cn010,ivi-cn014
 #SBATCH --cpus-per-task=32
 #SBATCH --gres=gpu:2
-#SBATCH --time=48:00:00
+#SBATCH --time=120:00:00
 #SBATCH --mem=160G
 #SBATCH --output=/dev/null
 #SBATCH --error=/dev/null
@@ -59,6 +59,12 @@ MODELS=(
     "m-citizen-run-2"
     "m-citizen-run-3"
     "m-citizen-run-3"
+    "m-citizen-box-run-1"
+    "m-citizen-box-run-1"
+    "m-citizen-box-run-2"
+    "m-citizen-box-run-2"
+    "m-citizen-box-run-3"
+    "m-citizen-box-run-3"
     "m-expert-run-1"
     "m-expert-run-1"
     "m-expert-run-2"
@@ -134,6 +140,12 @@ MODELS=(
 )
 
 METHODS=(
+    "unimatch_v2"
+    "test_model"
+    "unimatch_v2"
+    "test_model"
+    "unimatch_v2"
+    "test_model"
     "unimatch_v2"
     "test_model"
     "unimatch_v2"

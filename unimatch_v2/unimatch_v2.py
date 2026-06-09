@@ -73,6 +73,9 @@ def main():
         Loader=yaml.Loader
     )
 
+    epoch_ratio = float(training_cfg.get('epoch_ratio', 1.0))
+    cfg['epochs'] = max(1, round(cfg['epochs'] * epoch_ratio))
+
     logger = init_log('global', logging.INFO)
     logger.propagate = 0
     rank, world_size = setup_distributed(port=args.port)
@@ -190,6 +193,7 @@ def main():
     boxinst_color_thresh = float(training_cfg.get('boxinst_color_thresh', 0.1))
     boxinst_pairwise_size = int(training_cfg.get('boxinst_pairwise_size', 3))
     boxinst_pairwise_dilation = int(training_cfg.get('boxinst_pairwise_dilation', 2))
+    boxinst_neg_weight = float(training_cfg.get('boxinst_neg_weight', 1.0))
 
     # When unsup_off=True the unlabeled consistency branch (loss_u_s) is zeroed out.
     # All box-supervised and pixel-mask-supervised losses (AWL, BoxInst, citizen_correction,
@@ -198,8 +202,8 @@ def main():
 
     if rank == 0 and boxinst_enabled:
         logger.info(
-            'BoxInst enabled: weight %.2f, color_thresh %.2f, pairwise_size %d, dilation %d\n' %
-            (boxinst_weight, boxinst_color_thresh, boxinst_pairwise_size, boxinst_pairwise_dilation)
+            'BoxInst enabled: weight %.2f, color_thresh %.2f, pairwise_size %d, dilation %d, neg_weight %.2f\n' %
+            (boxinst_weight, boxinst_color_thresh, boxinst_pairwise_size, boxinst_pairwise_dilation, boxinst_neg_weight)
         )
 
     if rank == 0 and unsup_off:
@@ -639,6 +643,7 @@ def main():
                         tau=boxinst_color_thresh,
                         kernel_size=boxinst_pairwise_size,
                         dilation=boxinst_pairwise_dilation,
+                        neg_weight=boxinst_neg_weight,
                     )
                 else:
                     loss_boxinst = torch.zeros(1, device=img_u_w.device)

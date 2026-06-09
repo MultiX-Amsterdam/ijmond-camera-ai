@@ -12,3 +12,4 @@ pretrained_model: m-zeroshot
 citizen_data: ijmond_bbox/filtered_bbox_labels_1_aug_2025.json
 citizen_img: ijmond_bbox/img
 citizen_correction: true
+epoch_ratio: 1.0

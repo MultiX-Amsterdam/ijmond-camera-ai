@@ -242,6 +242,9 @@ def main():
         Loader=yaml.Loader
     )
 
+    epoch_ratio = float(training_cfg.get('epoch_ratio', 1.0))
+    cfg['epochs'] = max(1, round(cfg['epochs'] * epoch_ratio))
+
     logger = init_log('global', logging.INFO)
     logger.propagate = 0
     rank, world_size = setup_distributed(port=args.port)
