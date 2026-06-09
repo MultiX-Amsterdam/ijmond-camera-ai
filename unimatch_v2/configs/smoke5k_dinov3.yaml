@@ -31,6 +31,10 @@ boundary_lenience:
   window_size: 11    # AvgPool2d kernel size for local density estimation
   band_kernel_size: 11  # morphological dilation/erosion kernel for the eval exclusion band
 
+# Set to True to disable unlabeled consistency loss (loss_u_s), keeping all
+# box-supervised and pixel-mask-supervised losses (AWL, BoxInst, citizen_correction, CE/Dice).
+unsup_off: False
+
 # arguments for model
 model: dpt
 backbone: dinov3_base

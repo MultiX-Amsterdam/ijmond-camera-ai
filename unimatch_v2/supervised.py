@@ -232,6 +232,8 @@ def evaluate_new(model, dataloader, multiplier=None, band_kernel_size=None, crit
 
 
 def main():
+    torch.cuda.empty_cache()
+
     args = parser.parse_args()
     training_cfg = yaml.load(open(args.training_config, "r"), Loader=yaml.Loader)
 
@@ -289,7 +291,9 @@ def main():
         model.lock_backbone()
 
     if rank == 0:
-        logger.info('Total params: {:.1f}M\n'.format(count_params(model)))
+        logger.info('Total params: {:.1f}M'.format(count_params(model)))
+        logger.info('Encoder params: {:.1f}M'.format(count_params(model.backbone)))
+        logger.info('Decoder params: {:.1f}M\n'.format(count_params(model.head)))
 
     local_rank = int(os.environ.get("LOCAL_RANK", 0))
     model = torch.nn.SyncBatchNorm.convert_sync_batchnorm(model)
@@ -318,6 +322,19 @@ def main():
         output_device=local_rank,
         find_unused_parameters=True
     )
+
+    if pretrained_model_name := training_cfg.get("pretrained_model", "").strip():
+        pretrained_best_pth = os.path.join(os.path.dirname(args.save_path), pretrained_model_name, "best.pth")
+
+        if os.path.exists(pretrained_best_pth):
+            checkpoint = torch.load(
+                pretrained_best_pth,
+                map_location='cpu',
+                weights_only=False
+            )
+            model.load_state_dict(checkpoint["checkpoint"]["model"])
+            if rank == 0:
+                logger.info("Loaded %s at epoch %s" % (pretrained_best_pth, checkpoint["checkpoint"]["epoch"]))
 
     bl_cfg = cfg.get('boundary_lenience', {})
     if cfg['criterion']['name'] == 'CELossAndDiceLoss':
