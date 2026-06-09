@@ -1,0 +1,19 @@
+# arguments for setting up and training a model
+configuration: configs/ijmond_dinov3.yaml
+smoke_dataset: ""
+clear_dataset: ""
+unlabeled_dataset: experiment/unlabeled.txt
+validation_dataset: experiment/expert_standard_val.txt
+test_dataset: experiment/expert_standard_test.txt
+val_robust_dataset: experiment/expert_standard_val_corrupt.txt
+test_robust_dataset: experiment/expert_standard_test_corrupt.txt
+test_model: best.pth
+pretrained_model: m-zeroshot
+citizen_data: ijmond_bbox/filtered_bbox_labels_1_aug_2025.json
+citizen_img: ijmond_bbox/img
+citizen_correction: false
+boxinst: true
+boxinst_weight: 0.5
+boxinst_color_thresh: 0.1
+boxinst_pairwise_size: 3
+boxinst_pairwise_dilation: 2

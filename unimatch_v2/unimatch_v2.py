@@ -17,6 +17,7 @@ import yaml
 
 from dataset.boxsup import BoxSupDataset, boxsup_collate_fn, make_box_corrected_mask, make_fixed_box_mask, compute_box_confidence_weights
 from dataset.semi import SemiSmokeDataset
+from util.boxinst_loss import boxinst_loss as compute_boxinst_loss
 from model.semseg.dpt import DPT
 from supervised import evaluate_new
 from util.utils import count_params, init_log, AverageMeter, BoundaryLenienceCELoss, BoundaryLenienceDiceLoss, dice_loss, dice_loss_per_image, eval_score, update_loss_history, compute_lr, AttentionWeightedLoss, is_pareto_optimal, update_pareto_front, calculate_angle_score
@@ -184,6 +185,18 @@ def main():
     awl_weight = float(training_cfg.get('awl_weight', 1.0))
     awl_citizen_batch_ratio = float(training_cfg.get('awl_citizen_batch_ratio', 0.25))
 
+    boxinst_enabled = bool(training_cfg.get('boxinst', False))
+    boxinst_weight = float(training_cfg.get('boxinst_weight', 1.0))
+    boxinst_color_thresh = float(training_cfg.get('boxinst_color_thresh', 0.1))
+    boxinst_pairwise_size = int(training_cfg.get('boxinst_pairwise_size', 3))
+    boxinst_pairwise_dilation = int(training_cfg.get('boxinst_pairwise_dilation', 2))
+
+    if rank == 0 and boxinst_enabled:
+        logger.info(
+            'BoxInst enabled: weight %.2f, color_thresh %.2f, pairwise_size %d, dilation %d\n' %
+            (boxinst_weight, boxinst_color_thresh, boxinst_pairwise_size, boxinst_pairwise_dilation)
+        )
+
     if cfg['criterion']['name'] == 'CELossAndDiceLoss':
         if bl_cfg.get('enabled', False):
             criterion_l = BoundaryLenienceCELoss(
@@ -276,6 +289,7 @@ def main():
 
     smoke_batch_size = cfg['batch_size']
     clear_batch_size = max(smoke_batch_size // 10, 1)
+    has_smoke_dataset = bool(training_cfg.get('smoke_dataset'))
     has_clear_dataset = bool(training_cfg.get('clear_dataset'))
     batch_size = smoke_batch_size + (clear_batch_size if has_clear_dataset else 0)
     citizen_batch_size = max(1, int(smoke_batch_size * awl_citizen_batch_ratio)) if use_awl else smoke_batch_size
@@ -302,27 +316,30 @@ def main():
     else:
         trainloader_citizen = None
 
-    trainset_smoke = SemiSmokeDataset(
-        current_dataset,
-        cfg['data_root'],
-        'train_l',
-        cfg['crop_size'],
-        base_size=cfg.get('base_size'),
-        id_path=training_cfg['smoke_dataset'],
-        nsample=current_nsample,
-        use_dcp=cfg.get('use_dcp', False),
-    )
+    if has_smoke_dataset:
+        trainset_smoke = SemiSmokeDataset(
+            current_dataset,
+            cfg['data_root'],
+            'train_l',
+            cfg['crop_size'],
+            base_size=cfg.get('base_size'),
+            id_path=training_cfg['smoke_dataset'],
+            nsample=current_nsample,
+            use_dcp=cfg.get('use_dcp', False),
+        )
 
-    trainsampler_smoke = torch.utils.data.distributed.DistributedSampler(trainset_smoke)
+        trainsampler_smoke = torch.utils.data.distributed.DistributedSampler(trainset_smoke)
 
-    trainloader_smoke = DataLoader(
-        trainset_smoke,
-        batch_size=smoke_batch_size,
-        pin_memory=True,
-        num_workers=4,
-        drop_last=True,
-        sampler=trainsampler_smoke
-    )
+        trainloader_smoke = DataLoader(
+            trainset_smoke,
+            batch_size=smoke_batch_size,
+            pin_memory=True,
+            num_workers=4,
+            drop_last=True,
+            sampler=trainsampler_smoke
+        )
+    else:
+        trainloader_smoke = None
 
     if has_clear_dataset:
         trainset_clear = SemiSmokeDataset(
@@ -457,34 +474,43 @@ def main():
         total_loss_s = AverageMeter()
         total_loss_c = AverageMeter()
         total_loss_awl = AverageMeter()
+        total_loss_boxinst = AverageMeter()
         total_mask_ratio = AverageMeter()
 
-        trainloader_smoke.sampler.set_epoch(epoch)
+        if trainloader_smoke is not None:
+            trainloader_smoke.sampler.set_epoch(epoch)
         trainsampler_u.set_epoch(epoch)
         if trainloader_clear is not None:
             trainloader_clear.sampler.set_epoch(epoch)
         if trainloader_citizen is not None:
             trainloader_citizen.sampler.set_epoch(epoch)
 
-        if trainloader_clear is not None:
-            combined_loader = (
-                tuple(torch.cat(pair) for pair in zip(*batch))
-                for batch in zip(cycle(iter(trainloader_smoke)), cycle(iter(trainloader_clear)))
-            )
+        if trainloader_smoke is not None:
+            if trainloader_clear is not None:
+                combined_loader = (
+                    tuple(torch.cat(pair) for pair in zip(*batch))
+                    for batch in zip(cycle(iter(trainloader_smoke)), cycle(iter(trainloader_clear)))
+                )
+            else:
+                combined_loader = cycle(iter(trainloader_smoke))
+            loader = zip(combined_loader, trainloader_u)
         else:
-            combined_loader = cycle(iter(trainloader_smoke))
-
-        loader = zip(combined_loader, trainloader_u)
+            loader = trainloader_u
 
         citizen_iter = cycle(iter(trainloader_citizen)) if trainloader_citizen is not None else None
 
         model.train()
 
-        for i, ((img_x, mask_x),
-                (img_u_w, img_u_s1, img_u_s2, ignore_mask, cutmix_box1, cutmix_box2)) in enumerate(loader):
+        for i, batch in enumerate(loader):
+            if has_smoke_dataset:
+                (img_x, mask_x), (img_u_w, img_u_s1, img_u_s2, ignore_mask, cutmix_box1, cutmix_box2) = batch
+            else:
+                img_u_w, img_u_s1, img_u_s2, ignore_mask, cutmix_box1, cutmix_box2 = batch
+                img_x = mask_x = None
 
-            img_x = img_x.cuda(local_rank, non_blocking=True)
-            mask_x = mask_x.cuda(local_rank, non_blocking=True)
+            if has_smoke_dataset:
+                img_x = img_x.cuda(local_rank, non_blocking=True)
+                mask_x = mask_x.cuda(local_rank, non_blocking=True)
             img_u_w = img_u_w.cuda(local_rank, non_blocking=True)
             img_u_s1 = img_u_s1.cuda(local_rank, non_blocking=True)
             img_u_s2 = img_u_s2.cuda(local_rank, non_blocking=True)
@@ -502,7 +528,7 @@ def main():
             cutmix_mask2 = cutmix_box2.unsqueeze(1).expand(img_u_s2.shape) == 1
             img_u_s2 = torch.where(cutmix_mask2, img_u_s2.flip(0), img_u_s2)
 
-            pred_x = model(img_x)
+            pred_x = model(img_x) if has_smoke_dataset else None
             pred_u_s1, pred_u_s2 = model(torch.cat((img_u_s1, img_u_s2)), comp_drop=True).chunk(2)
 
             mask_u_w_cutmixed1, conf_u_w_cutmixed1, ignore_mask_cutmixed1 = mask_u_w.clone(), conf_u_w.clone(), ignore_mask.clone()
@@ -588,17 +614,33 @@ def main():
                     box_mask_c = make_fixed_box_mask(bboxes_c, H_c, W_c).float()
                     loss_awl = awl_criterion(pred_c_w_student, box_mask_c, alpha=alpha_c)
                 else:
-                    loss_awl = torch.zeros(1, device=img_x.device)
+                    pred_c_w_student = None
+                    loss_awl = torch.zeros(1, device=img_u_w.device)
+
+                if boxinst_enabled:
+                    # BoxInst loss on the weak citizen view. Reuse pred_c_w_student if AWL
+                    # already computed it; otherwise do a fresh forward pass.
+                    if pred_c_w_student is None:
+                        pred_c_w_student = model(img_c_w)
+                    loss_boxinst = compute_boxinst_loss(
+                        pred_c_w_student, img_c_w, bboxes_c,
+                        tau=boxinst_color_thresh,
+                        kernel_size=boxinst_pairwise_size,
+                        dilation=boxinst_pairwise_dilation,
+                    )
+                else:
+                    loss_boxinst = torch.zeros(1, device=img_u_w.device)
             else:
                 loss_c_s = torch.zeros(1).cuda(local_rank)
                 loss_awl = torch.zeros(1).cuda(local_rank)
+                loss_boxinst = torch.zeros(1).cuda(local_rank)
 
             loss_ce_w = cfg['criterion'].get('loss_ce_weight', 0.25)
             loss_dice_w = cfg['criterion'].get('loss_dice_weight', 0.25)
             loss_u_w = cfg['criterion'].get('loss_u_weight', 0.5)
-            loss_x_ce = criterion_l(pred_x, mask_x) if loss_ce_w > 0 else torch.zeros(1).cuda(local_rank)
-            loss_x_dice = dice_loss_fn(pred_x, mask_x) if loss_dice_w > 0 else torch.zeros(1).cuda(local_rank)
-            loss = loss_ce_w * loss_x_ce + loss_dice_w * loss_x_dice + loss_u_w * loss_u_s + awl_weight * loss_awl
+            loss_x_ce = criterion_l(pred_x, mask_x) if (has_smoke_dataset and loss_ce_w > 0) else torch.zeros(1).cuda(local_rank)
+            loss_x_dice = dice_loss_fn(pred_x, mask_x) if (has_smoke_dataset and loss_dice_w > 0) else torch.zeros(1).cuda(local_rank)
+            loss = loss_ce_w * loss_x_ce + loss_dice_w * loss_x_dice + loss_u_w * loss_u_s + awl_weight * loss_awl + boxinst_weight * loss_boxinst
 
             optimizer.zero_grad()
             loss.backward()
@@ -610,6 +652,7 @@ def main():
             total_loss_s.update(loss_u_s.item())
             total_loss_c.update(loss_c_s.item())
             total_loss_awl.update(loss_awl.item())
+            total_loss_boxinst.update(loss_boxinst.item())
             mask_ratio = ((conf_u_w >= cfg['conf_thresh']) & (ignore_mask != 255)).sum().item() / max(
                     (ignore_mask != 255).sum().item(), 1)
             total_mask_ratio.update(mask_ratio)
@@ -638,15 +681,35 @@ def main():
                 writer.add_scalar('train/mask_ratio', mask_ratio, iters)
                 if awl_criterion is not None:
                     writer.add_scalar('train/loss_awl', loss_awl.item(), iters)
+                if boxinst_enabled:
+                    writer.add_scalar('train/loss_boxinst', loss_boxinst.item(), iters)
 
             if (i % max(len(trainloader_u) // 8, 1) == 0) and (rank == 0):
-                if awl_criterion is not None:
+                if awl_criterion is not None and boxinst_enabled:
+                    logger.info(
+                        'Iters: {:04d}, LR: {:.7f}, Total loss: {:.3f}, Loss CE: {:.3f}, Loss dice: {:.3f}, '
+                        'Loss u: {:.3f}, Loss c: {:.3f}, Loss AWL: {:.3f}, Loss BoxInst: {:.3f}, Mask ratio: {:.3f}'.format(
+                            i, optimizer.param_groups[0]['lr'], total_loss.avg, total_loss_x.avg,
+                            total_loss_dice.avg, total_loss_s.avg, total_loss_c.avg,
+                            total_loss_awl.avg, total_loss_boxinst.avg, total_mask_ratio.avg
+                        )
+                    )
+                elif awl_criterion is not None:
                     logger.info(
                         'Iters: {:04d}, LR: {:.7f}, Total loss: {:.3f}, Loss CE: {:.3f}, Loss dice: {:.3f}, '
                         'Loss u: {:.3f}, Loss c: {:.3f}, Loss AWL: {:.3f}, Mask ratio: {:.3f}'.format(
                             i, optimizer.param_groups[0]['lr'], total_loss.avg, total_loss_x.avg,
                             total_loss_dice.avg, total_loss_s.avg, total_loss_c.avg,
                             total_loss_awl.avg, total_mask_ratio.avg
+                        )
+                    )
+                elif boxinst_enabled:
+                    logger.info(
+                        'Iters: {:04d}, LR: {:.7f}, Total loss: {:.3f}, Loss CE: {:.3f}, Loss dice: {:.3f}, '
+                        'Loss u: {:.3f}, Loss c: {:.3f}, Loss BoxInst: {:.3f}, Mask ratio: {:.3f}'.format(
+                            i, optimizer.param_groups[0]['lr'], total_loss.avg, total_loss_x.avg,
+                            total_loss_dice.avg, total_loss_s.avg, total_loss_c.avg,
+                            total_loss_boxinst.avg, total_mask_ratio.avg
                         )
                     )
                 else:
