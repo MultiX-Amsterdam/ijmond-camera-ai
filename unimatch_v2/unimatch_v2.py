@@ -825,20 +825,14 @@ def main():
             angle_score = calculate_angle_score(model.module, initial_state_dict)
             if prev_angle_score is not None:
                 delta_angle = abs(angle_score - prev_angle_score)
-                converged = delta_angle < 1e-4
                 logger.info(
-                    '***** Convergence Check ***** >>>> Angle Score: {:.6f}, Delta Angle: {:.6f}'.format(
+                    '***** Angle Score ***** >>>> Angle Score: {:.6f}, Delta Angle: {:.6f}'.format(
                         angle_score, delta_angle
-                    )
-                )
-                logger.info(
-                    '***** Convergence Check ***** >>>> Mathematical Condition: {} (Delta={:.6f} vs epsilon=1e-4)'.format(
-                        "CONVERGED" if converged else "NOT CONVERGED", delta_angle
                     )
                 )
             else:
                 logger.info(
-                    '***** Convergence Check ***** >>>> Angle Score: {:.6f}, Delta Angle: N/A (first epoch)'.format(
+                    '***** Angle Score ***** >>>> Angle Score: {:.6f}, Delta Angle: N/A (first epoch)'.format(
                         angle_score
                     )
                 )
