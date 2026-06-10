@@ -15,4 +15,4 @@ citizen_correction: false
 awl: true
 awl_weight: 0.25
 awl_citizen_batch_ratio: 0.25
-epoch_ratio: 0.8
+epoch_ratio: 1.0

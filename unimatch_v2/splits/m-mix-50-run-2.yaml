@@ -12,4 +12,4 @@ pretrained_model: m-zeroshot
 citizen_data: ""
 citizen_img: ""
 citizen_correction: false
-epoch_ratio: 0.8
+epoch_ratio: 1.0
