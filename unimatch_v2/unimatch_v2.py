@@ -573,7 +573,7 @@ def main():
                 img_c_w       = img_c_w.cuda(local_rank, non_blocking=True)
                 bboxes_c      = bboxes_c.cuda(local_rank, non_blocking=True)
 
-                if not use_awl:
+                if not use_awl and not unsup_off:
                     # Use citizen data in the unsupervised pseudo-labeling branch
                     img_c_s1      = img_c_s1.cuda(local_rank, non_blocking=True)
                     img_c_s2      = img_c_s2.cuda(local_rank, non_blocking=True)
@@ -670,6 +670,7 @@ def main():
             total_loss_c.update(loss_c_s.item())
             total_loss_awl.update(loss_awl.item())
             total_loss_boxinst.update(loss_boxinst.item())
+            mask_ratio = 0.0
             if not unsup_off:
                 mask_ratio = ((conf_u_w >= cfg['conf_thresh']) & (ignore_mask != 255)).sum().item() / max(
                         (ignore_mask != 255).sum().item(), 1)
