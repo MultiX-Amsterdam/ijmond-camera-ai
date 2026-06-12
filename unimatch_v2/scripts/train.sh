@@ -48,9 +48,13 @@ MODELS=(
     "m-mix-100-box-run-1"
     "m-mix-100-awl-run-1"
     "m-mix-100-awl-run-1"
+    "m-citizen-boxinst-run-1"
+    "m-citizen-boxinst-run-1"
 )
 
 METHODS=(
+    "unimatch_v2"
+    "test_model"
     "unimatch_v2"
     "test_model"
     "unimatch_v2"

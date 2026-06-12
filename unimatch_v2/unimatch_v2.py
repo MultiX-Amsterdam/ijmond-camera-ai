@@ -18,6 +18,7 @@ import yaml
 from dataset.boxsup import BoxSupDataset, boxsup_collate_fn, make_box_corrected_mask, make_fixed_box_mask, compute_box_confidence_weights
 from dataset.semi import SemiSmokeDataset
 from util.boxinst_loss import boxinst_loss as compute_boxinst_loss
+from util.fcos_loss import fcos_cls_loss as compute_fcos_cls_loss
 from model.semseg.dpt import DPT
 from supervised import evaluate_new
 from util.utils import count_params, init_log, AverageMeter, BoundaryLenienceCELoss, BoundaryLenienceDiceLoss, dice_loss, dice_loss_per_image, eval_score, update_loss_history, compute_lr, AttentionWeightedLoss, is_pareto_optimal, update_pareto_front, calculate_angle_score
@@ -195,6 +196,13 @@ def main():
     boxinst_pairwise_dilation = int(training_cfg.get('boxinst_pairwise_dilation', 2))
     boxinst_neg_weight = float(training_cfg.get('boxinst_neg_weight', 1.0))
 
+    fcos_cls_enabled = bool(training_cfg.get('fcos_cls', False))
+    fcos_cls_weight = float(training_cfg.get('fcos_cls_weight', 0.5))
+    fcos_alpha = float(training_cfg.get('fcos_alpha', 0.25))
+    fcos_gamma = float(training_cfg.get('fcos_gamma', 2.0))
+    fcos_center_sample = bool(training_cfg.get('fcos_center_sample', True))
+    fcos_radius_ratio = float(training_cfg.get('fcos_radius_ratio', 0.5))
+
     # When unsup_off=True the unlabeled consistency branch (loss_u_s) is zeroed out.
     # All box-supervised and pixel-mask-supervised losses (AWL, BoxInst, citizen_correction,
     # CE/Dice on smoke_dataset) remain active.
@@ -204,6 +212,12 @@ def main():
         logger.info(
             'BoxInst enabled: weight %.2f, color_thresh %.2f, pairwise_size %d, dilation %d, neg_weight %.2f\n' %
             (boxinst_weight, boxinst_color_thresh, boxinst_pairwise_size, boxinst_pairwise_dilation, boxinst_neg_weight)
+        )
+
+    if rank == 0 and fcos_cls_enabled:
+        logger.info(
+            'FCOS cls enabled: weight %.2f, alpha %.2f, gamma %.2f, center_sample %s, radius_ratio %.1f\n' %
+            (fcos_cls_weight, fcos_alpha, fcos_gamma, fcos_center_sample, fcos_radius_ratio)
         )
 
     if rank == 0 and unsup_off:
@@ -487,6 +501,7 @@ def main():
         total_loss_c = AverageMeter()
         total_loss_awl = AverageMeter()
         total_loss_boxinst = AverageMeter()
+        total_loss_fcos_cls = AverageMeter()
         total_mask_ratio = AverageMeter()
 
         if trainloader_smoke is not None:
@@ -647,17 +662,34 @@ def main():
                     )
                 else:
                     loss_boxinst = torch.zeros(1, device=img_u_w.device)
+
+                if fcos_cls_enabled:
+                    # FCOS focal classification loss on the weak citizen view.
+                    # Reuse pred_c_w_student if already computed; negative images
+                    # (all boxes padding) contribute all-background labels, suppressing FAR.
+                    if pred_c_w_student is None:
+                        pred_c_w_student = model(img_c_w)
+                    loss_fcos_cls = compute_fcos_cls_loss(
+                        pred_c_w_student, bboxes_c,
+                        alpha=fcos_alpha,
+                        gamma=fcos_gamma,
+                        center_sample=fcos_center_sample,
+                        radius_ratio=fcos_radius_ratio,
+                    )
+                else:
+                    loss_fcos_cls = torch.zeros(1, device=img_u_w.device)
             else:
                 loss_c_s = torch.zeros(1).cuda(local_rank)
                 loss_awl = torch.zeros(1).cuda(local_rank)
                 loss_boxinst = torch.zeros(1).cuda(local_rank)
+                loss_fcos_cls = torch.zeros(1).cuda(local_rank)
 
             loss_ce_w = cfg['criterion'].get('loss_ce_weight', 0.25)
             loss_dice_w = cfg['criterion'].get('loss_dice_weight', 0.25)
             loss_u_w = cfg['criterion'].get('loss_u_weight', 0.5)
             loss_x_ce = criterion_l(pred_x, mask_x) if (has_smoke_dataset and loss_ce_w > 0) else torch.zeros(1).cuda(local_rank)
             loss_x_dice = dice_loss_fn(pred_x, mask_x) if (has_smoke_dataset and loss_dice_w > 0) else torch.zeros(1).cuda(local_rank)
-            loss = loss_ce_w * loss_x_ce + loss_dice_w * loss_x_dice + loss_u_w * loss_u_s + awl_weight * loss_awl + boxinst_weight * loss_boxinst
+            loss = loss_ce_w * loss_x_ce + loss_dice_w * loss_x_dice + loss_u_w * loss_u_s + awl_weight * loss_awl + boxinst_weight * loss_boxinst + fcos_cls_weight * loss_fcos_cls
 
             optimizer.zero_grad()
             loss.backward()
@@ -670,6 +702,7 @@ def main():
             total_loss_c.update(loss_c_s.item())
             total_loss_awl.update(loss_awl.item())
             total_loss_boxinst.update(loss_boxinst.item())
+            total_loss_fcos_cls.update(loss_fcos_cls.item())
             mask_ratio = 0.0
             if not unsup_off:
                 mask_ratio = ((conf_u_w >= cfg['conf_thresh']) & (ignore_mask != 255)).sum().item() / max(
@@ -702,44 +735,25 @@ def main():
                     writer.add_scalar('train/loss_awl', loss_awl.item(), iters)
                 if boxinst_enabled:
                     writer.add_scalar('train/loss_boxinst', loss_boxinst.item(), iters)
+                if fcos_cls_enabled:
+                    writer.add_scalar('train/loss_fcos_cls', loss_fcos_cls.item(), iters)
 
             if (i % max(len(trainloader_u) // 8, 1) == 0) and (rank == 0):
-                if awl_criterion is not None and boxinst_enabled:
-                    logger.info(
-                        'Iters: {:04d}, LR: {:.7f}, Total loss: {:.3f}, Loss CE: {:.3f}, Loss dice: {:.3f}, '
-                        'Loss u: {:.3f}, Loss c: {:.3f}, Loss AWL: {:.3f}, Loss BoxInst: {:.3f}, Mask ratio: {:.3f}'.format(
-                            i, optimizer.param_groups[0]['lr'], total_loss.avg, total_loss_x.avg,
-                            total_loss_dice.avg, total_loss_s.avg, total_loss_c.avg,
-                            total_loss_awl.avg, total_loss_boxinst.avg, total_mask_ratio.avg
-                        )
+                log_parts = [
+                    'Iters: {:04d}, LR: {:.7f}, Total loss: {:.3f}, Loss CE: {:.3f}, Loss dice: {:.3f}, '
+                    'Loss u: {:.3f}, Loss c: {:.3f}'.format(
+                        i, optimizer.param_groups[0]['lr'], total_loss.avg, total_loss_x.avg,
+                        total_loss_dice.avg, total_loss_s.avg, total_loss_c.avg,
                     )
-                elif awl_criterion is not None:
-                    logger.info(
-                        'Iters: {:04d}, LR: {:.7f}, Total loss: {:.3f}, Loss CE: {:.3f}, Loss dice: {:.3f}, '
-                        'Loss u: {:.3f}, Loss c: {:.3f}, Loss AWL: {:.3f}, Mask ratio: {:.3f}'.format(
-                            i, optimizer.param_groups[0]['lr'], total_loss.avg, total_loss_x.avg,
-                            total_loss_dice.avg, total_loss_s.avg, total_loss_c.avg,
-                            total_loss_awl.avg, total_mask_ratio.avg
-                        )
-                    )
-                elif boxinst_enabled:
-                    logger.info(
-                        'Iters: {:04d}, LR: {:.7f}, Total loss: {:.3f}, Loss CE: {:.3f}, Loss dice: {:.3f}, '
-                        'Loss u: {:.3f}, Loss c: {:.3f}, Loss BoxInst: {:.3f}, Mask ratio: {:.3f}'.format(
-                            i, optimizer.param_groups[0]['lr'], total_loss.avg, total_loss_x.avg,
-                            total_loss_dice.avg, total_loss_s.avg, total_loss_c.avg,
-                            total_loss_boxinst.avg, total_mask_ratio.avg
-                        )
-                    )
-                else:
-                    logger.info(
-                        'Iters: {:04d}, LR: {:.7f}, Total loss: {:.3f}, Loss CE: {:.3f}, Loss dice: {:.3f}, '
-                        'Loss u: {:.3f}, Loss c: {:.3f}, Mask ratio: {:.3f}'.format(
-                            i, optimizer.param_groups[0]['lr'], total_loss.avg, total_loss_x.avg,
-                            total_loss_dice.avg, total_loss_s.avg, total_loss_c.avg,
-                            total_mask_ratio.avg
-                        )
-                    )
+                ]
+                if awl_criterion is not None:
+                    log_parts.append('Loss AWL: {:.3f}'.format(total_loss_awl.avg))
+                if boxinst_enabled:
+                    log_parts.append('Loss BoxInst: {:.3f}'.format(total_loss_boxinst.avg))
+                if fcos_cls_enabled:
+                    log_parts.append('Loss FCOS cls: {:.3f}'.format(total_loss_fcos_cls.avg))
+                log_parts.append('Mask ratio: {:.3f}'.format(total_mask_ratio.avg))
+                logger.info(', '.join(log_parts))
 
         if rank == 0:
             logger.info('***** Epoch {:04d} ***** >>>> Train Loss: {:.4f}'.format(epoch, total_loss.avg))
