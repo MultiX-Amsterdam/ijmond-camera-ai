@@ -49,7 +49,7 @@ conda activate ijmond-camera-ai
 conda install python=3.13
 conda install pip
 which pip # make sure this is the pip inside the conda environment
-sh ijmond-camera-monitor/back-end/install_packages.sh
+sh ijmond-camera-ai/install_packages.sh
 ```
 If the environment already exists and you want to remove it before installing packages, use the following:
 ```sh
