@@ -239,23 +239,24 @@ def fmt_mean_std(mean, std):
 # Row definitions: (model_key, display_name, citizen_col, expert_col)
 # None entries trigger a \midrule separator.
 TABLE_ROWS = [
-    ("m-zeroshot",    "Pretrained",  "0\\%",    "0\\%"),
-    ("m-citizen",     "Citizen",     "100\\%",  "0\\%"),
+    ("m-zeroshot",        "Pretrained",  "0\\%",    "0\\%"),
+    ("m-citizen",         "Citizen",     "100\\%",  "0\\%"),
+    ("m-citizen-boxinst", "Citizen-box", "100\\%",  "0\\%"),
     None,
-    ("m-expert-25",   "Expert-25",   "0\\%",    "25\\%"),
-    ("m-mix-25-box",  "Filter-25",   "100\\%",  "25\\%"),
-    ("m-mix-25",      "Mix-25",      "100\\%",  "25\\%"),
-    ("m-mix-25-awl",  "AWL-25",      "100\\%",  "25\\%"),
+    ("m-expert-25",       "Expert-25",   "0\\%",    "25\\%"),
+    ("m-mix-25-box",      "Filter-25",   "100\\%",  "25\\%"),
+    ("m-mix-25",          "Mix-25",      "100\\%",  "25\\%"),
+    ("m-mix-25-awl",      "AWL-25",      "100\\%",  "25\\%"),
     None,
-    ("m-expert-50",   "Expert-50",   "0\\%",    "50\\%"),
-    ("m-mix-50-box",  "Filter-50",   "100\\%",  "50\\%"),
-    ("m-mix-50",      "Mix-50",      "100\\%",  "50\\%"),
-    ("m-mix-50-awl",  "AWL-50",      "100\\%",  "50\\%"),
+    ("m-expert-50",       "Expert-50",   "0\\%",    "50\\%"),
+    ("m-mix-50-box",      "Filter-50",   "100\\%",  "50\\%"),
+    ("m-mix-50",          "Mix-50",      "100\\%",  "50\\%"),
+    ("m-mix-50-awl",      "AWL-50",      "100\\%",  "50\\%"),
     None,
-    ("m-expert",      "Expert-100",  "0\\%",    "100\\%"),
-    ("m-mix-100-box", "Filter-100",  "100\\%",  "100\\%"),
-    ("m-mix-100",     "Mix-100",     "100\\%",  "100\\%"),
-    ("m-mix-100-awl", "AWL-100",     "100\\%",  "100\\%"),
+    ("m-expert",          "Expert-100",  "0\\%",    "100\\%"),
+    ("m-mix-100-box",     "Filter-100",  "100\\%",  "100\\%"),
+    ("m-mix-100",         "Mix-100",     "100\\%",  "100\\%"),
+    ("m-mix-100-awl",     "AWL-100",     "100\\%",  "100\\%"),
 ]
 
 
