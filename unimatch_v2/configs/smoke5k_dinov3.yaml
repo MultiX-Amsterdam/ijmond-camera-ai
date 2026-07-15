@@ -1,0 +1,42 @@
+# arguments for dataset
+dataset: smoke5k
+data_root: /home/yhsu/ijmond-camera-ai/bbox_learn/dataset
+nclass: 2
+crop_size: 256 # must be divisible by 16 (DINOv3 patch size)
+base_size: 512 # long side rescaled to this before scale jitter (2x crop_size)
+
+# arguments for training
+epochs: 2 # use 50 epochs for full training
+unlabeled_sample_size: 10402  # number of unlabeled images sampled per epoch
+batch_size: 30 # per GPU (decrease this if using multiple GPUs to avoid OOM)
+lr: 0.00001 # use 0.000005 for single GPU, 0.00001 for two GPUs, 0.000015 for three, and 0.00002 for four
+lr_multi: 40.0
+min_lr: 0.0000001  # backbone LR floor; head floor = min_lr * lr_multi
+warmup_epochs: 0  # linear warmup
+weight_decay: 0.01
+criterion:
+  name: CELossAndDiceLoss
+  kwargs:
+    ignore_index: 255
+  loss_ce_weight: 0.5
+  loss_dice_weight: 0.5
+  loss_u_weight: 0
+conf_thresh: 0.95
+model_selection_warmup_epochs: 10  # number of epochs to skip before model selection (e.g. 10 means selection starts at epoch 11)
+
+# Boundary leniency: reduces loss penalty at smoke/background edges
+boundary_lenience:
+  enabled: False
+  alpha: 0.8        # leniency strength in [0, 1]; 0 = standard CE, 1 = full leniency at edges
+  window_size: 11    # AvgPool2d kernel size for local density estimation
+  band_kernel_size: 11  # morphological dilation/erosion kernel for the eval exclusion band
+
+# Set to True to disable unlabeled consistency loss (loss_u_s), keeping all
+# box-supervised and pixel-mask-supervised losses (AWL, BoxInst, citizen_correction, CE/Dice).
+unsup_off: False
+
+# arguments for model
+model: dpt
+backbone: dinov3_base
+lock_backbone: True
+use_dcp: True

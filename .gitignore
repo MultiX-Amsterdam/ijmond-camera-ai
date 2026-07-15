@@ -7,3 +7,5 @@
 *.db
 *.log*
 *screenlog*
+communiy-data/*
+bbox_learn/dataset/smoke5k

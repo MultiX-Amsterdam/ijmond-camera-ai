@@ -1,7 +1,6 @@
 import cv2
 import os
 import argparse
-import numpy as np
 
 
 def arg_parse():
@@ -14,7 +13,7 @@ def arg_parse():
 
 def extract_frames(video_path, output_folder, all_txt_entries):
     """
-    Extract frames from a video file and save them as .npy files with (H, W, C) format.
+    Extract frames from a video file and save them as .png images.
     Collects txt entries for a single combined txt file.
     Args:
         video_path: path to the video file
@@ -27,10 +26,10 @@ def extract_frames(video_path, output_folder, all_txt_entries):
     if not os.path.exists(video_output_folder):
         os.makedirs(video_output_folder)
 
-    # Create img_npy subdirectory
-    img_npy_folder = os.path.join(video_output_folder, "img_npy")
-    if not os.path.exists(img_npy_folder):
-        os.makedirs(img_npy_folder)
+    # Create img subdirectory
+    img_folder = os.path.join(video_output_folder, "img")
+    if not os.path.exists(img_folder):
+        os.makedirs(img_folder)
 
     # Open the video file
     cap = cv2.VideoCapture(video_path)
@@ -47,16 +46,13 @@ def extract_frames(video_path, output_folder, all_txt_entries):
             break
         frame_count += 1
 
-        # Convert BGR to RGB (OpenCV uses BGR by default)
-        frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-
-        # Save frame as .npy file with (Height, Width, Channel) format
-        frame_filename = f"img_{frame_count:04d}.npy"
-        frame_path = os.path.join(img_npy_folder, frame_filename)
-        np.save(frame_path, frame_rgb)
+        # Save frame as .png file
+        frame_filename = f"img_{frame_count:04d}.png"
+        frame_path = os.path.join(img_folder, frame_filename)
+        cv2.imwrite(frame_path, frame)
 
         # Add entry to global txt file list (include video folder in path)
-        all_txt_entries.append(f"{output_folder}/{video_name}/img_npy/{frame_filename} None")
+        all_txt_entries.append(f"{output_folder}/{video_name}/img/{frame_filename} None")
 
     print(f"Extracted {frame_count} frames to {video_output_folder}")
 

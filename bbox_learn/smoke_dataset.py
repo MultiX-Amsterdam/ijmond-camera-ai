@@ -4,6 +4,7 @@ import torch
 from torch.utils.data import Dataset
 from torchvision import tv_tensors
 import numpy as np
+from PIL import Image
 from util.util import (
     load_pair_txt,
     is_file_here
@@ -17,7 +18,7 @@ class SmokeDataset(Dataset):
     def __init__(self, metadata_path, root_dir, transform=None):
         """
         metadata_path (string): the full path to the metadata json file
-        root_dir (string): the root directory that stores images and ground truth segmentation masks in .npy format
+        root_dir (string): the root directory that stores images and ground truth segmentation masks
         transform (callable, optional): optional transform v2 (torchvision.transforms.v2) to be applied on an image and bounding boxes.
         """
         self.metadata = load_pair_txt(metadata_path)
@@ -35,13 +36,13 @@ class SmokeDataset(Dataset):
         if not is_file_here(img_file_path):
             raise ValueError("Cannot find file: %s" % (img_file_path))
 
-        # Load image from .npy file
-        img = torch.from_numpy(np.load(img_file_path).astype(np.uint8))
+        # Load image
+        img = torch.from_numpy(np.array(Image.open(img_file_path).convert('RGB')))
 
-        # Change dimensions fro (H, W, C) to (C, H, W)
+        # Change dimensions from (H, W, C) to (C, H, W)
         img = img.permute(2, 0, 1)
 
-        if v[1] == "None":
+        if len(v) == 1 or v[1] == "None":
             # For unlabeled data, return only the image
             if self.transform:
                 img = self.transform(img)
@@ -51,8 +52,8 @@ class SmokeDataset(Dataset):
             gt_file_path = os.path.join(self.root_dir, f"{v[1]}")
             if not is_file_here(gt_file_path):
                 raise ValueError("Cannot find file: %s" % (gt_file_path))
-            # Load ground truth segmentation mask from .npy file
-            gt = torch.from_numpy(np.load(gt_file_path).astype(np.uint8))
+            # Load ground truth segmentation mask
+            gt = torch.from_numpy(np.array(Image.open(gt_file_path).convert('L')))
             # Convert to tv_tensors.Mask for proper transform handling
             gt = tv_tensors.Mask(gt)
             # Transform image
@@ -64,18 +65,14 @@ class SmokeDataset(Dataset):
 if __name__ == "__main__":
     if len(sys.argv) != 4:
         print("Usage: python smoke_dataset.py <metadata_path> <root_dir> <dataset_name>")
-        print("Example: python smoke_dataset.py dataset/smoke5k/test/test.txt dataset/smoke5k/test/ smoke5k_test")
-        print("Example: python smoke_dataset.py dataset/smoke5k/train/train.txt dataset/smoke5k/train/ smoke5k_train")
-        print("Example: python smoke_dataset.py dataset/ijmond_pseudo_masks/train_with_mask.txt dataset/ijmond_pseudo_masks/ ijmond_pseudo_mask_with_mask")
-        print("Example: python smoke_dataset.py dataset/ijmond_pseudo_masks/train_without_mask.txt dataset/ijmond_pseudo_masks/ ijmond_pseudo_mask_without_mask")
-        print("Example: python smoke_dataset.py dataset/ijmond_vid/unlabeled.txt dataset/ijmond_vid/ ijmond_vid_unlabeled")
-        print("Example: python smoke_dataset.py dataset/ijmond_seg/test/cropped/test_with_mask.txt dataset/ijmond_seg/test/cropped/ ijmond_seg_cropped_with_mask")
-        print("Example: python smoke_dataset.py dataset/ijmond_seg/test/cropped/test_without_mask.txt dataset/ijmond_seg/test/cropped/ ijmond_seg_cropped_without_mask")
+        print("See smoke_dataset.sh for example usage.")
         sys.exit(1)
 
-    metadata_path = sys.argv[1]
-    root_dir = sys.argv[2]
-    dataset_name = sys.argv[3]
+    metadata_path = sys.argv[1].strip()
+    root_dir = sys.argv[2].strip()
+    dataset_name = sys.argv[3].strip()
+    print("=" * 50)
+    print("dataset_name:", dataset_name)
 
     if not os.path.exists(metadata_path):
         print(f"Error: Metadata file '{metadata_path}' not found.")
@@ -147,7 +144,9 @@ if __name__ == "__main__":
                     masks_tensor = torch.stack(masks_list)
                     data_to_plot.append((img, {"masks": masks_tensor}))
                     print(f"  -> Treated as {len(masks_list)} separate binary masks")
-    plot(data_to_plot, f"debug_plot_{dataset_name}.png")
+
+    os.makedirs("debug_plot", exist_ok=True)
+    plot(data_to_plot, f"debug_plot/{dataset_name}.png")
 
     # Keep the original sample checking for compatibility
     s = selected_samples[0] if selected_samples else None
@@ -206,7 +205,7 @@ if __name__ == "__main__":
                     transformed_data_to_plot.append((img, {"masks": masks_tensor}))
 
     # Plot the images and masks
-    plot(transformed_data_to_plot, f"debug_plot_{dataset_name}_transformed.png")
+    plot(transformed_data_to_plot, f"debug_plot/{dataset_name}_transformed.png")
 
     # Show transform comparison for first sample
     st = transformed_samples[0]

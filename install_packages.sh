@@ -6,5 +6,9 @@ pip install --upgrade requests==2.32.4
 pip install --upgrade pillow==11.2.1
 pip install --upgrade matplotlib==3.10.3
 pip install --upgrade tqdm==4.67.1
-pip install git+https://github.com/facebookresearch/segment-anything.git
-wget -P bbox_learn https://dl.fbaipublicfiles.com/segment_anything/sam_vit_l_0b3195.pth
+pip install --upgrade tensorboard==2.20.0
+pip install --upgrade pyyaml==6.0.3
+pip install --upgrade timm==1.0.26
+pip install --upgrade numba==0.65.1
+pip install --upgrade scikit-image==0.25.2
+pip install --upgrade filetype==1.2.0

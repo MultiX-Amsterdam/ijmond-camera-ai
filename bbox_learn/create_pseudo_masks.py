@@ -71,18 +71,14 @@ def collate_fn(batch):
 
 def save_batch_masks(batch_masks, batch_idx, images, output_dir="dataset/ijmond_pseudo_masks"):
     """
-    Save masks from a single batch to disk, including images, masks, and overlays in multiple formats
+    Save masks from a single batch to disk, including images, masks, and overlays as image files
     """
     # Create all subdirectories
-    img_npy_dir = os.path.join(output_dir, "img_npy")
     img_png_dir = os.path.join(output_dir, "img")
-    mask_npy_dir = os.path.join(output_dir, "mask_npy")
     mask_png_dir = os.path.join(output_dir, "mask")
     overlay_dir = os.path.join(output_dir, "overlay")
 
-    os.makedirs(img_npy_dir, exist_ok=True)
     os.makedirs(img_png_dir, exist_ok=True)
-    os.makedirs(mask_npy_dir, exist_ok=True)
     os.makedirs(mask_png_dir, exist_ok=True)
     os.makedirs(overlay_dir, exist_ok=True)
 
@@ -99,11 +95,6 @@ def save_batch_masks(batch_masks, batch_idx, images, output_dir="dataset/ijmond_
         else:
             img_numpy = image.to(torch.uint8).permute(1, 2, 0).cpu().numpy()
 
-        # Save image as .npy
-        img_npy_filename = f"img_{image_idx:04d}.npy"
-        img_npy_filepath = os.path.join(img_npy_dir, img_npy_filename)
-        np.save(img_npy_filepath, img_numpy)
-
         # Save image as .png
         img_png_filename = f"img_{image_idx:04d}.png"
         img_png_filepath = os.path.join(img_png_dir, img_png_filename)
@@ -114,11 +105,6 @@ def save_batch_masks(batch_masks, batch_idx, images, output_dir="dataset/ijmond_
         if len(mask_info['masks']) > 0:
             for mask_idx, mask in enumerate(mask_info['masks']):
                 mask_numpy = mask.cpu().numpy().astype(np.uint8)
-
-                # Save mask as .npy
-                mask_npy_filename = f"mask_img_{image_idx:04d}_box_{mask_idx:02d}.npy"
-                mask_npy_filepath = os.path.join(mask_npy_dir, mask_npy_filename)
-                np.save(mask_npy_filepath, mask_numpy)
 
                 # Save mask as .png (convert boolean mask to 0-255)
                 mask_png_filename = f"mask_img_{image_idx:04d}_box_{mask_idx:02d}.png"
@@ -153,7 +139,7 @@ def save_batch_masks(batch_masks, batch_idx, images, output_dir="dataset/ijmond_
 def main():
     if len(sys.argv) != 3:
         print("Usage: python create_pseudo_masks.py <metadata_path> <root_dir>")
-        print("Example: python create_pseudo_masks.py dataset/ijmond_bbox/filtered_bbox_labels_1_aug_2025.json dataset/ijmond_bbox/img_npy/")
+        print("Example: python create_pseudo_masks.py dataset/ijmond_bbox/filtered_bbox_labels_1_aug_2025.json dataset/ijmond_bbox/img/")
         sys.exit(1)
 
     metadata_path = sys.argv[1]
@@ -190,24 +176,18 @@ def main():
 
     # Create output directories
     output_dir = "dataset/ijmond_pseudo_masks"
-    img_npy_dir = os.path.join(output_dir, "img_npy")
     img_png_dir = os.path.join(output_dir, "img")
-    mask_npy_dir = os.path.join(output_dir, "mask_npy")
     mask_png_dir = os.path.join(output_dir, "mask")
     overlay_dir = os.path.join(output_dir, "overlay")
 
     os.makedirs(output_dir, exist_ok=True)
-    os.makedirs(img_npy_dir, exist_ok=True)
     os.makedirs(img_png_dir, exist_ok=True)
-    os.makedirs(mask_npy_dir, exist_ok=True)
     os.makedirs(mask_png_dir, exist_ok=True)
     os.makedirs(overlay_dir, exist_ok=True)
 
     print(f"Created/verified output directories:")
     print(f"  Main: {output_dir}")
-    print(f"  Images (NPY): {img_npy_dir}")
     print(f"  Images (PNG): {img_png_dir}")
-    print(f"  Masks (NPY): {mask_npy_dir}")
     print(f"  Masks (PNG): {mask_png_dir}")
     print(f"  Overlays: {overlay_dir}")
 
@@ -361,15 +341,15 @@ def main():
             if num_boxes > 0:
                 # Images with bounding boxes (and therefore masks)
                 for mask_idx in range(metadata_info['num_masks_generated']):
-                    img_path = f"img_npy/img_{image_idx:04d}.npy"
-                    mask_path = f"mask_npy/mask_img_{image_idx:04d}_box_{mask_idx:02d}.npy"
+                    img_path = f"img/img_{image_idx:04d}.png"
+                    mask_path = f"mask/mask_img_{image_idx:04d}_box_{mask_idx:02d}.png"
                     f_with.write(f"{img_path} {mask_path}\n")
                     with_mask_count += 1
             else:
                 # Images without bounding boxes (empty masks)
                 for mask_idx in range(metadata_info['num_masks_generated']):
-                    img_path = f"img_npy/img_{image_idx:04d}.npy"
-                    mask_path = f"mask_npy/mask_img_{image_idx:04d}_box_{mask_idx:02d}.npy"
+                    img_path = f"img/img_{image_idx:04d}.png"
+                    mask_path = f"mask/mask_img_{image_idx:04d}_box_{mask_idx:02d}.png"
                     f_without.write(f"{img_path} {mask_path}\n")
                     without_mask_count += 1
 
@@ -380,16 +360,15 @@ def main():
     print(f"\nFinal file structure:")
     print(f"  {output_dir}/train_with_mask.txt - training pairs with masks in MS COCO format")
     print(f"  {output_dir}/train_without_mask.txt - training pairs without masks in MS COCO format")
-    print(f"  {img_npy_dir}/ - original images as .npy files")
     print(f"  {img_png_dir}/ - original images as .png files")
-    print(f"  {mask_npy_dir}/ - generated masks as .npy files")
     print(f"  {mask_png_dir}/ - generated masks as .png files")
     print(f"  {overlay_dir}/ - mask overlays on images as .png files")
 
     # Plot the results
     if len(plot_data) > 0:
         print(f"\nPlotting results for {len(plot_data)} data points...")
-        plot_filename = "debug_plot_pseudo_masks.png"
+        os.makedirs("debug_plot", exist_ok=True)
+        plot_filename = "debug_plot/pseudo_masks.png"
         plot([plot_data], plot_filename, title=["Ground Truth Box (Yellow) + SAM Mask (Green)"])
 
 

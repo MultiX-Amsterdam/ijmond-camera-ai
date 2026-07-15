@@ -1,0 +1,15 @@
+# arguments for setting up and training a model
+configuration: configs/ijmond_dinov3.yaml
+smoke_dataset: experiment/citizen_with_mask.txt
+clear_dataset: experiment/citizen_without_mask.txt
+unlabeled_dataset: experiment/unlabeled.txt
+validation_dataset: experiment/expert_standard_val.txt
+test_dataset: experiment/expert_standard_test.txt
+val_robust_dataset: experiment/expert_standard_val_corrupt.txt
+test_robust_dataset: experiment/expert_standard_test_corrupt.txt
+test_model: best.pth
+pretrained_model: m-zeroshot
+citizen_data: ""
+citizen_img: ""
+citizen_correction: false
+epoch_ratio: 1.0

@@ -4,6 +4,7 @@ import torch
 from torch.utils.data import Dataset
 from torchvision import tv_tensors
 import numpy as np
+from PIL import Image
 from util.util import (
     load_json,
     is_file_here
@@ -16,7 +17,7 @@ class IjmondBboxDataset(Dataset):
     def __init__(self, metadata_path, root_dir, transform=None):
         """
         metadata_path (string): the full path to the metadata json file (after running the "filter_aggr_bbox.py" script)
-        root_dir (string): the root directory that stores images in .npy format
+        root_dir (string): the root directory that stores images
         transform (callable, optional): optional transform v2 (torchvision.transforms.v2) to be applied on an image and bounding boxes.
         """
         self.metadata = load_json(metadata_path)
@@ -29,12 +30,12 @@ class IjmondBboxDataset(Dataset):
     def __getitem__(self, idx):
         v = self.metadata[idx]
 
-        file_path = os.path.join(self.root_dir, f"{v["id"]}.npy")
+        file_path = os.path.join(self.root_dir, f"{v["id"]}.png")
         if not is_file_here(file_path):
             raise ValueError("Cannot find file: %s" % (file_path))
 
-        # Load image from .npy file
-        img = torch.from_numpy(np.load(file_path).astype(np.uint8))
+        # Load image
+        img = torch.from_numpy(np.array(Image.open(file_path).convert('RGB')))
 
         # Change dimensions fro (H, W, C) to (C, H, W)
         img = img.permute(2, 0, 1)
@@ -73,7 +74,7 @@ if __name__ == "__main__":
     # Code to test the dataset loading and transformations
     if len(sys.argv) != 3:
         print("Usage: python ijmond_bbox_dataset.py <metadata_path> <root_dir>")
-        print("Example: python ijmond_bbox_dataset.py dataset/ijmond_bbox/filtered_bbox_labels_4_july_2025.json dataset/ijmond_bbox/img_npy/")
+        print("Example: python ijmond_bbox_dataset.py dataset/ijmond_bbox/filtered_bbox_labels_4_july_2025.json dataset/ijmond_bbox/img/")
         sys.exit(1)
 
     metadata_path = sys.argv[1]
@@ -117,5 +118,6 @@ if __name__ == "__main__":
             print(f"Sample img shape after transform: {st['img'].shape}")
             print(f"Sample img values after transform: {st['img'][0, 0:5, 0:5]}")
             print(f"Sample bbox after transform: {st['boxes']}")
-            plot([(s['img'], s['boxes']), (st['img'], st['boxes'])], "debug_plot_ijmondbox.png")
+            os.makedirs("debug_plot", exist_ok=True)
+            plot([(s['img'], s['boxes']), (st['img'], st['boxes'])], "debug_plot/ijmondbox.png")
             break

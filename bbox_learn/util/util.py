@@ -43,66 +43,6 @@ def is_file_here(file_path):
     return os.path.isfile(file_path)
 
 
-def convert_images_to_npy(image_path, npy_path, gray_scale=False):
-    """Convert a single jpg/png image to .npy file. Create output directory if needed."""
-    output_dir = os.path.dirname(npy_path)
-    if output_dir and not os.path.exists(output_dir):
-        os.makedirs(output_dir)
-    if os.path.exists(npy_path):
-        print(f"Skipping {npy_path} (already exists)")
-        return
-    if gray_scale:
-        img = Image.open(image_path).convert("L")
-    else:
-        img = Image.open(image_path).convert("RGB")
-    arr = np.array(img)
-    np.save(npy_path, arr)
-    print(f"Converted {os.path.basename(image_path)} to {os.path.basename(npy_path)}")
-
-
-def convert_all_images_to_npy(input_dir, output_dir):
-    """
-    Convert all images in a directory to .npy files.
-
-    Args:
-        input_dir (str): Directory containing input images
-        output_dir (str): Directory to save .npy files
-    """
-    if not os.path.exists(input_dir):
-        print(f"Error: Input directory '{input_dir}' does not exist.")
-        return
-
-    # Create output directory if it doesn't exist
-    if not os.path.exists(output_dir):
-        os.makedirs(output_dir)
-
-    # Supported image extensions
-    image_extensions = {'.jpg', '.jpeg', '.png', '.bmp', '.tiff', '.tif'}
-
-    # Get all image files in the input directory
-    image_files = []
-    for filename in os.listdir(input_dir):
-        if os.path.splitext(filename.lower())[1] in image_extensions:
-            image_files.append(filename)
-
-    if not image_files:
-        print(f"No image files found in '{input_dir}'")
-        return
-
-    print(f"Found {len(image_files)} image files to convert...")
-
-    # Convert each image
-    for filename in image_files:
-        image_path = os.path.join(input_dir, filename)
-        # Change extension to .npy
-        npy_filename = os.path.splitext(filename)[0] + '.npy'
-        npy_path = os.path.join(output_dir, npy_filename)
-
-        convert_images_to_npy(image_path, npy_path)
-
-    print(f"Conversion complete! Converted {len(image_files)} images to .npy format.")
-
-
 def draw_bbox_on_image(image_path, save_path, bboxes, color=(255, 0, 0, 0.5), width=2):
     """
     Draw a list of bounding boxes on the image and save to a file.
